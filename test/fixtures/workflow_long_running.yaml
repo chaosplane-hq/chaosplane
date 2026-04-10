@@ -1,0 +1,27 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: ChaosWorkflow
+metadata:
+  name: workflow-long-running
+  namespace: chaos-testing
+spec:
+  errorHandling:
+    strategy: abort
+  execution:
+    maxParallelism: 1
+  templates:
+    - name: long-experiment
+      type: experiment
+      experimentRef:
+        name: long-running-experiment
+    - name: wait-period
+      type: delay
+      delay:
+        duration: 10m
+      dependencies:
+        - long-experiment
+    - name: verify
+      type: suspend
+      suspend:
+        timeout: 30m
+      dependencies:
+        - wait-period

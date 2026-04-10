@@ -146,6 +146,24 @@ func (r *ExperimentReconciler) reconcileRunning(ctx context.Context, exp *v1alph
 		return r.handleAbort(ctx, exp, log)
 	}
 
+	if len(exp.Spec.AbortConditions) > 0 {
+		triggered, action, err := r.checkAbortConditions(ctx, exp, log)
+		if err != nil {
+			log.Error("abort condition check failed", "error", err)
+		} else if triggered {
+			switch action {
+			case v1alpha1.AbortActionRollback:
+				log.Info("abort condition triggered, rolling back")
+				r.Recorder.Event(exp, "Warning", "AbortConditionTriggered", "Abort condition met, rolling back")
+				return r.transitionToCompleting(ctx, exp, log)
+			default:
+				log.Info("abort condition triggered, aborting")
+				r.Recorder.Event(exp, "Warning", "AbortConditionTriggered", "Abort condition met, aborting")
+				return r.handleAbort(ctx, exp, log)
+			}
+		}
+	}
+
 	if exp.Status.StartTime == nil {
 		return r.setFailed(ctx, exp, "running experiment has no startTime")
 	}
@@ -183,7 +201,39 @@ func (r *ExperimentReconciler) reconcileRunning(ctx context.Context, exp *v1alph
 	}
 
 	remaining := duration - elapsed
+	if len(exp.Spec.AbortConditions) > 0 && remaining > 5*time.Second {
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
 	return ctrl.Result{RequeueAfter: remaining}, nil
+}
+
+func abortConditionToProbeSpec(ac v1alpha1.AbortConditionSpec) v1alpha1.ProbeSpec {
+	return v1alpha1.ProbeSpec{
+		Name:       ac.Name,
+		Type:       ac.Type,
+		Prometheus: ac.Prometheus,
+		HTTP:       ac.HTTP,
+		K8s:        ac.K8s,
+	}
+}
+
+func (r *ExperimentReconciler) checkAbortConditions(ctx context.Context, exp *v1alpha1.ChaosExperiment, log *slog.Logger) (bool, v1alpha1.AbortAction, error) {
+	for _, ac := range exp.Spec.AbortConditions {
+		spec := abortConditionToProbeSpec(ac)
+		p, err := probe.NewProbe(spec, r.Client)
+		if err != nil {
+			return false, "", fmt.Errorf("abort condition %q: %w", ac.Name, err)
+		}
+		ok, err := p.Run(ctx)
+		if err != nil {
+			return false, "", fmt.Errorf("abort condition %q: %w", ac.Name, err)
+		}
+		if ok {
+			log.Info("abort condition triggered", "condition", ac.Name, "action", ac.Action)
+			return true, ac.Action, nil
+		}
+	}
+	return false, "", nil
 }
 
 func (r *ExperimentReconciler) handleAbort(ctx context.Context, exp *v1alpha1.ChaosExperiment, log *slog.Logger) (ctrl.Result, error) {

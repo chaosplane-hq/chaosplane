@@ -15,7 +15,9 @@ import (
 	"github.com/chaosplane-hq/chaosplane/internal/controller"
 	"github.com/chaosplane-hq/chaosplane/internal/executor"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/network"
+	"github.com/chaosplane-hq/chaosplane/internal/executor/node"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/pod"
+	"github.com/chaosplane-hq/chaosplane/internal/executor/stress"
 	"github.com/chaosplane-hq/chaosplane/internal/webhook"
 )
 
@@ -48,6 +50,8 @@ func main() {
 		os.Exit(1)
 	}
 	daemonFactory := pod.DefaultDaemonClientFactory
+	nodeDaemonFactory := node.DaemonClientFactory(node.DefaultDaemonClientFactory)
+	stressDaemonFactory := stress.DaemonClientFactory(stress.DefaultDaemonClientFactory)
 
 	registry.MustRegister("pod-kill", pod.NewKillExecutor(logger, k8sClient, clientset))
 	registry.MustRegister("container-kill", pod.NewContainerKillExecutor(logger, k8sClient, daemonFactory))
@@ -65,6 +69,14 @@ func main() {
 	registry.MustRegister("network-partition", network.NewPartitionExecutor(logger, k8sClient, daemonFactory))
 	registry.MustRegister("network-bandwidth", network.NewBandwidthExecutor(logger, k8sClient, daemonFactory))
 
+	registry.MustRegister("node-drain", node.NewDrainExecutor(logger, k8sClient, clientset))
+	registry.MustRegister("node-taint", node.NewTaintExecutor(logger, k8sClient))
+	registry.MustRegister("node-restart", node.NewRestartExecutor(logger, k8sClient, nodeDaemonFactory))
+	registry.MustRegister("node-cpu-stress", node.NewCPUStressExecutor(logger, k8sClient, nodeDaemonFactory))
+
+	registry.MustRegister("stress-cpu", stress.NewCPUExecutor(logger, k8sClient, stressDaemonFactory))
+	registry.MustRegister("stress-memory", stress.NewMemoryExecutor(logger, k8sClient, stressDaemonFactory))
+
 	reconciler := &controller.ExperimentReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
@@ -74,6 +86,17 @@ func main() {
 	}
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		logger.Error("unable to setup controller", "error", err)
+		os.Exit(1)
+	}
+
+	workflowReconciler := &controller.WorkflowReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("workflow-controller"),
+		Logger:   slog.Default().With("controller", "workflow"),
+	}
+	if err := workflowReconciler.SetupWithManager(mgr); err != nil {
+		logger.Error("unable to setup workflow controller", "error", err)
 		os.Exit(1)
 	}
 

@@ -1,0 +1,231 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+env:
+  - CGO_ENABLED=0
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: operator
+    binary: chaosplane-operator
+    main: ./cmd/operator
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: daemon
+    binary: chaosplane-daemon
+    main: ./cmd/daemon
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  - id: chaosctl
+    binary: chaosctl
+    main: ./cmd/chaosctl
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: chaosctl-archive
+    builds:
+      - chaosctl
+    name_template: "chaosctl_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+
+  - id: operator-archive
+    builds:
+      - operator
+    name_template: "chaosplane-operator_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    files:
+      - LICENSE
+
+  - id: daemon-archive
+    builds:
+      - daemon
+    name_template: "chaosplane-daemon_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    files:
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+sboms:
+  - artifacts: archive
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "Merge pull request"
+  groups:
+    - title: "🚀 Features"
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: "🐛 Bug Fixes"
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: "📦 Other"
+      order: 999
+
+release:
+  github:
+    owner: chaosplane-hq
+    name: chaosplane
+  draft: false
+  prerelease: auto
+  name_template: "chaosplane v{{ .Version }}"
+
+dockers:
+  - id: operator-amd64
+    ids:
+      - operator
+    image_templates:
+      - "ghcr.io/chaosplane-hq/chaosplane-operator:{{ .Tag }}-amd64"
+    dockerfile: build/release/Dockerfile.operator
+    use: buildx
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+    goarch: amd64
+
+  - id: operator-arm64
+    ids:
+      - operator
+    image_templates:
+      - "ghcr.io/chaosplane-hq/chaosplane-operator:{{ .Tag }}-arm64"
+    dockerfile: build/release/Dockerfile.operator
+    use: buildx
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+    goarch: arm64
+
+  - id: daemon-amd64
+    ids:
+      - daemon
+    image_templates:
+      - "ghcr.io/chaosplane-hq/chaosplane-daemon:{{ .Tag }}-amd64"
+    dockerfile: build/release/Dockerfile.daemon
+    use: buildx
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+    goarch: amd64
+
+  - id: daemon-arm64
+    ids:
+      - daemon
+    image_templates:
+      - "ghcr.io/chaosplane-hq/chaosplane-daemon:{{ .Tag }}-arm64"
+    dockerfile: build/release/Dockerfile.daemon
+    use: buildx
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+    goarch: arm64
+
+docker_manifests:
+  - name_template: "ghcr.io/chaosplane-hq/chaosplane-operator:{{ .Tag }}"
+    image_templates:
+      - "ghcr.io/chaosplane-hq/chaosplane-operator:{{ .Tag }}-amd64"
+      - "ghcr.io/chaosplane-hq/chaosplane-operator:{{ .Tag }}-arm64"
+
+  - name_template: "ghcr.io/chaosplane-hq/chaosplane-operator:latest"
+    image_templates:
+      - "ghcr.io/chaosplane-hq/chaosplane-operator:{{ .Tag }}-amd64"
+      - "ghcr.io/chaosplane-hq/chaosplane-operator:{{ .Tag }}-arm64"
+
+  - name_template: "ghcr.io/chaosplane-hq/chaosplane-daemon:{{ .Tag }}"
+    image_templates:
+      - "ghcr.io/chaosplane-hq/chaosplane-daemon:{{ .Tag }}-amd64"
+      - "ghcr.io/chaosplane-hq/chaosplane-daemon:{{ .Tag }}-arm64"
+
+  - name_template: "ghcr.io/chaosplane-hq/chaosplane-daemon:latest"
+    image_templates:
+      - "ghcr.io/chaosplane-hq/chaosplane-daemon:{{ .Tag }}-amd64"
+      - "ghcr.io/chaosplane-hq/chaosplane-daemon:{{ .Tag }}-arm64"
+
+docker_signs:
+  - cmd: cosign
+    artifacts: manifests
+    output: true
+    args:
+      - "sign"
+      - "${artifact}"
+      - "--yes"
+
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    args:
+      - "sign-blob"
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true

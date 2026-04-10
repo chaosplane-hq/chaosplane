@@ -27,12 +27,31 @@ type ChaosExperimentList struct {
 }
 
 type ChaosExperimentSpec struct {
-	Target      TargetSpec       `json:"target"`
-	Action      ActionSpec       `json:"action"`
-	Duration    metav1.Duration  `json:"duration"`
-	Rollback    *RollbackSpec    `json:"rollback,omitempty"`
-	Execution   ExecutionSpec    `json:"execution,omitempty"`
-	SteadyState *SteadyStateSpec `json:"steadyState,omitempty"`
+	Target          TargetSpec           `json:"target"`
+	Action          ActionSpec           `json:"action"`
+	Duration        metav1.Duration      `json:"duration"`
+	Rollback        *RollbackSpec        `json:"rollback,omitempty"`
+	Execution       ExecutionSpec        `json:"execution,omitempty"`
+	SteadyState     *SteadyStateSpec     `json:"steadyState,omitempty"`
+	AbortConditions []AbortConditionSpec `json:"abortConditions,omitempty"`
+}
+
+// +kubebuilder:validation:Enum=abort;pause;rollback
+type AbortAction string
+
+const (
+	AbortActionAbort    AbortAction = "abort"
+	AbortActionPause    AbortAction = "pause"
+	AbortActionRollback AbortAction = "rollback"
+)
+
+type AbortConditionSpec struct {
+	Name       string           `json:"name"`
+	Type       ProbeType        `json:"type"`
+	Prometheus *PrometheusProbe `json:"prometheus,omitempty"`
+	HTTP       *HTTPProbe       `json:"http,omitempty"`
+	K8s        *K8sProbe        `json:"k8s,omitempty"`
+	Action     AbortAction      `json:"action"`
 }
 
 type SteadyStateSpec struct {

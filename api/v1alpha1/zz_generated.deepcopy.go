@@ -76,6 +76,32 @@ func (in *ChaosExperimentSpec) DeepCopyInto(out *ChaosExperimentSpec) {
 		*out = new(SteadyStateSpec)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.AbortConditions != nil {
+		in, out := &in.AbortConditions, &out.AbortConditions
+		*out = make([]AbortConditionSpec, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+}
+
+func (in *AbortConditionSpec) DeepCopyInto(out *AbortConditionSpec) {
+	*out = *in
+	if in.Prometheus != nil {
+		in, out := &in.Prometheus, &out.Prometheus
+		*out = new(PrometheusProbe)
+		**out = **in
+	}
+	if in.HTTP != nil {
+		in, out := &in.HTTP, &out.HTTP
+		*out = new(HTTPProbe)
+		**out = **in
+	}
+	if in.K8s != nil {
+		in, out := &in.K8s, &out.K8s
+		*out = new(K8sProbe)
+		**out = **in
+	}
 }
 
 func (in *TargetSpec) DeepCopyInto(out *TargetSpec) {

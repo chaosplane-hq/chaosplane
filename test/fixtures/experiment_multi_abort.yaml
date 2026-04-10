@@ -1,0 +1,34 @@
+apiVersion: chaosplane.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: experiment-multi-abort
+  namespace: default
+spec:
+  target:
+    kind: Pod
+    namespace: default
+    labelSelector:
+      matchLabels:
+        app: web
+  action:
+    type: pod-kill
+  duration: 10m
+  abortConditions:
+    - name: high-error-rate
+      type: prometheus
+      prometheus:
+        url: http://prometheus:9090
+        query: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))
+        condition:
+          operator: ">"
+          threshold: 0.1
+      action: abort
+    - name: pods-not-ready
+      type: k8s
+      k8s:
+        resource: Pod
+        namespace: default
+        labelSelector: app=web
+        condition:
+          minReady: 2
+      action: rollback

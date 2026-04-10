@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -505,5 +507,248 @@ func TestReconcileTerminalStatesAreNoOp(t *testing.T) {
 				t.Fatal("terminal state should not requeue")
 			}
 		})
+	}
+}
+
+func promServer(value string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := fmt.Sprintf(`{"status":"success","data":{"resultType":"vector","result":[{"value":[1234567890,%q]}]}}`, value)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, resp)
+	}))
+}
+
+func promServerEmpty() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"status":"success","data":{"resultType":"vector","result":[]}}`)
+	}))
+}
+
+func makeExperimentWithAbort(name string, duration time.Duration, abortConditions []v1alpha1.AbortConditionSpec) *v1alpha1.ChaosExperiment {
+	exp := makeExperiment(name, duration)
+	exp.Spec.AbortConditions = abortConditions
+	return exp
+}
+
+func TestAbortConditions_PrometheusTriggered(t *testing.T) {
+	if cfg == nil {
+		t.Skip("envtest not available")
+	}
+
+	srv := promServer("99.5")
+	defer srv.Close()
+
+	exp := makeExperimentWithAbort("test-abort-prom", 5*time.Minute, []v1alpha1.AbortConditionSpec{
+		{
+			Name: "high-error-rate",
+			Type: v1alpha1.ProbeTypePrometheus,
+			Prometheus: &v1alpha1.PrometheusProbe{
+				URL:   srv.URL,
+				Query: "error_rate",
+				Condition: v1alpha1.ProbeCondition{
+					Operator:  ">",
+					Threshold: 50.0,
+				},
+			},
+			Action: v1alpha1.AbortActionAbort,
+		},
+	})
+
+	ctx := context.Background()
+	if err := k8sClient.Create(ctx, exp); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	defer func() { _ = k8sClient.Delete(ctx, exp) }()
+
+	r, rec := newReconciler()
+	nn := types.NamespacedName{Name: exp.Name, Namespace: exp.Namespace}
+
+	if _, err := reconcileN(ctx, r, nn, 2); err != nil {
+		t.Fatalf("reconcile to running: %v", err)
+	}
+
+	updated, _ := getExperiment(ctx, nn)
+	if updated.Status.Phase != v1alpha1.PhaseRunning {
+		t.Fatalf("expected Running, got %s", updated.Status.Phase)
+	}
+
+	if _, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn}); err != nil {
+		t.Fatalf("reconcile running with abort: %v", err)
+	}
+
+	updated, _ = getExperiment(ctx, nn)
+	if updated.Status.Phase != v1alpha1.PhaseAborted {
+		t.Fatalf("expected Aborted, got %s", updated.Status.Phase)
+	}
+	if !hasEvent(rec, "AbortConditionTriggered") {
+		t.Fatal("expected AbortConditionTriggered event")
+	}
+}
+
+func TestAbortConditions_MultipleOR(t *testing.T) {
+	if cfg == nil {
+		t.Skip("envtest not available")
+	}
+
+	srvLow := promServerEmpty()
+	defer srvLow.Close()
+
+	srvHigh := promServer("100")
+	defer srvHigh.Close()
+
+	exp := makeExperimentWithAbort("test-abort-multi", 5*time.Minute, []v1alpha1.AbortConditionSpec{
+		{
+			Name: "condition-a",
+			Type: v1alpha1.ProbeTypePrometheus,
+			Prometheus: &v1alpha1.PrometheusProbe{
+				URL:   srvLow.URL,
+				Query: "metric_a",
+				Condition: v1alpha1.ProbeCondition{
+					Operator:  ">",
+					Threshold: 50.0,
+				},
+			},
+			Action: v1alpha1.AbortActionAbort,
+		},
+		{
+			Name: "condition-b",
+			Type: v1alpha1.ProbeTypePrometheus,
+			Prometheus: &v1alpha1.PrometheusProbe{
+				URL:   srvHigh.URL,
+				Query: "metric_b",
+				Condition: v1alpha1.ProbeCondition{
+					Operator:  ">",
+					Threshold: 50.0,
+				},
+			},
+			Action: v1alpha1.AbortActionAbort,
+		},
+	})
+
+	ctx := context.Background()
+	if err := k8sClient.Create(ctx, exp); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	defer func() { _ = k8sClient.Delete(ctx, exp) }()
+
+	r, rec := newReconciler()
+	nn := types.NamespacedName{Name: exp.Name, Namespace: exp.Namespace}
+
+	if _, err := reconcileN(ctx, r, nn, 2); err != nil {
+		t.Fatalf("reconcile to running: %v", err)
+	}
+
+	if _, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn}); err != nil {
+		t.Fatalf("reconcile running: %v", err)
+	}
+
+	updated, _ := getExperiment(ctx, nn)
+	if updated.Status.Phase != v1alpha1.PhaseAborted {
+		t.Fatalf("expected Aborted (OR eval), got %s", updated.Status.Phase)
+	}
+	if !hasEvent(rec, "AbortConditionTriggered") {
+		t.Fatal("expected AbortConditionTriggered event")
+	}
+}
+
+func TestAbortConditions_NoneTriggered(t *testing.T) {
+	if cfg == nil {
+		t.Skip("envtest not available")
+	}
+
+	srv := promServer("10")
+	defer srv.Close()
+
+	exp := makeExperimentWithAbort("test-abort-none", 5*time.Minute, []v1alpha1.AbortConditionSpec{
+		{
+			Name: "low-error-rate",
+			Type: v1alpha1.ProbeTypePrometheus,
+			Prometheus: &v1alpha1.PrometheusProbe{
+				URL:   srv.URL,
+				Query: "error_rate",
+				Condition: v1alpha1.ProbeCondition{
+					Operator:  ">",
+					Threshold: 50.0,
+				},
+			},
+			Action: v1alpha1.AbortActionAbort,
+		},
+	})
+
+	ctx := context.Background()
+	if err := k8sClient.Create(ctx, exp); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	defer func() { _ = k8sClient.Delete(ctx, exp) }()
+
+	r, _ := newReconciler()
+	nn := types.NamespacedName{Name: exp.Name, Namespace: exp.Namespace}
+
+	if _, err := reconcileN(ctx, r, nn, 2); err != nil {
+		t.Fatalf("reconcile to running: %v", err)
+	}
+
+	res, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+	if err != nil {
+		t.Fatalf("reconcile running: %v", err)
+	}
+
+	updated, _ := getExperiment(ctx, nn)
+	if updated.Status.Phase != v1alpha1.PhaseRunning {
+		t.Fatalf("expected Running (no trigger), got %s", updated.Status.Phase)
+	}
+	if res.RequeueAfter != 5*time.Second {
+		t.Fatalf("expected 5s requeue with abort conditions, got %v", res.RequeueAfter)
+	}
+}
+
+func TestAbortConditions_RollbackAction(t *testing.T) {
+	if cfg == nil {
+		t.Skip("envtest not available")
+	}
+
+	srv := promServer("99.5")
+	defer srv.Close()
+
+	exp := makeExperimentWithAbort("test-abort-rb", 5*time.Minute, []v1alpha1.AbortConditionSpec{
+		{
+			Name: "high-error-rate",
+			Type: v1alpha1.ProbeTypePrometheus,
+			Prometheus: &v1alpha1.PrometheusProbe{
+				URL:   srv.URL,
+				Query: "error_rate",
+				Condition: v1alpha1.ProbeCondition{
+					Operator:  ">",
+					Threshold: 50.0,
+				},
+			},
+			Action: v1alpha1.AbortActionRollback,
+		},
+	})
+
+	ctx := context.Background()
+	if err := k8sClient.Create(ctx, exp); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	defer func() { _ = k8sClient.Delete(ctx, exp) }()
+
+	r, rec := newReconciler()
+	nn := types.NamespacedName{Name: exp.Name, Namespace: exp.Namespace}
+
+	if _, err := reconcileN(ctx, r, nn, 2); err != nil {
+		t.Fatalf("reconcile to running: %v", err)
+	}
+
+	if _, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn}); err != nil {
+		t.Fatalf("reconcile running: %v", err)
+	}
+
+	updated, _ := getExperiment(ctx, nn)
+	if updated.Status.Phase != v1alpha1.PhaseCompleting {
+		t.Fatalf("expected Completing (rollback action), got %s", updated.Status.Phase)
+	}
+	if !hasEvent(rec, "AbortConditionTriggered") {
+		t.Fatal("expected AbortConditionTriggered event")
 	}
 }

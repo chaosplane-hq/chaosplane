@@ -1,0 +1,27 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: ChaosWorkflow
+metadata:
+  name: workflow-with-cycle
+  namespace: chaos-testing
+spec:
+  errorHandling:
+    strategy: abort
+  templates:
+    - name: step-a
+      type: experiment
+      experimentRef:
+        name: experiment-a
+      dependencies:
+        - step-c
+    - name: step-b
+      type: experiment
+      experimentRef:
+        name: experiment-b
+      dependencies:
+        - step-a
+    - name: step-c
+      type: experiment
+      experimentRef:
+        name: experiment-c
+      dependencies:
+        - step-b
