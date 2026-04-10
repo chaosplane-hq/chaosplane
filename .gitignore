@@ -1,0 +1,41 @@
+# Binary output
+bin/
+chaosctl
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+cover.out
+coverage.html
+
+# Kind
+kubeconfig
+
+# Tilt
+.tiltbuild/
+
+# Generated (tracked, but ignore local changes)
+# zz_generated.deepcopy.go — tracked via make generate
+
+# Sisyphus state
+.sisyphus/

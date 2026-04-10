@@ -1,0 +1,25 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+      - id: go-vet
+      - id: go-imports
+
+  - repo: local
+    hooks:
+      - id: generate-check
+        name: Check generated files
+        entry: bash -c 'make generate manifests && git diff --exit-code'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

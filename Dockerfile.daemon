@@ -1,0 +1,16 @@
+FROM golang:1.24-alpine AS builder
+WORKDIR /workspace
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /daemon ./cmd/daemon/...
+
+# NOTE: The daemon container requires CAP_NET_ADMIN at runtime for network
+# fault injection (tc, iptables). Grant via securityContext in the DaemonSet spec:
+#   securityContext:
+#     capabilities:
+#       add: ["NET_ADMIN"]
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=builder /daemon /app/daemon
+USER 65532:65532
+ENTRYPOINT ["/app/daemon"]

@@ -1,0 +1,50 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - gosimple
+    - ineffassign
+    - typecheck
+    - gofumpt
+    - misspell
+    - unconvert
+    - unparam
+    - gocritic
+    - revive
+    - exportloopref
+    - nilerr
+    - bodyclose
+    - contextcheck
+
+linters-settings:
+  gofumpt:
+    extra-rules: true
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+  revive:
+    rules:
+      - name: exported
+        arguments:
+          - "checkPrivateReceivers"
+
+issues:
+  exclude-dirs:
+    - vendor
+    - hack
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+        - unparam
+    - path: zz_generated
+      linters:
+        - all
