@@ -1,0 +1,18 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: BlastRadiusPolicy
+metadata:
+  name: production-safety
+spec:
+  scope:
+    namespaces: ["production", "prod-*"]
+  targetLimits:
+    maxTargets: 3
+    maxPercentage: 10
+  protectedResources:
+    namespaces: ["kube-system", "chaosplane-system"]
+    labels:
+      critical: "true"
+  actionLimits:
+    allowedActions: ["pod-kill", "pod-cpu-stress", "network-delay"]
+    maxDuration: "5m"
+  enforcement: Enforce

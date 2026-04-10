@@ -1,0 +1,19 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: chaosplane-validating-webhook
+webhooks:
+  - name: validate.chaosexperiment.chaosplane.io
+    rules:
+      - apiGroups: ["chaos.chaosplane.io"]
+        apiVersions: ["v1alpha1"]
+        resources: ["chaosexperiments"]
+        operations: ["CREATE", "UPDATE"]
+    clientConfig:
+      service:
+        name: chaosplane-webhook-service
+        namespace: chaosplane-system
+        path: /validate-chaosexperiment
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
