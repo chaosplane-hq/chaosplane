@@ -14,6 +14,7 @@ import (
 	v1alpha1 "github.com/chaosplane-hq/chaosplane/api/v1alpha1"
 	"github.com/chaosplane-hq/chaosplane/internal/controller"
 	"github.com/chaosplane-hq/chaosplane/internal/executor"
+	"github.com/chaosplane-hq/chaosplane/internal/executor/network"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/pod"
 	"github.com/chaosplane-hq/chaosplane/internal/webhook"
 )
@@ -56,6 +57,13 @@ func main() {
 	registry.MustRegister("pod-dns-error", pod.NewDNSErrorExecutor(logger, k8sClient, daemonFactory))
 	registry.MustRegister("pod-http-abort", pod.NewHTTPAbortExecutor(logger, k8sClient, daemonFactory))
 	registry.MustRegister("pod-http-delay", pod.NewHTTPDelayExecutor(logger, k8sClient, daemonFactory))
+
+	registry.MustRegister("network-delay", network.NewDelayExecutor(logger, k8sClient, daemonFactory))
+	registry.MustRegister("network-loss", network.NewLossExecutor(logger, k8sClient, daemonFactory))
+	registry.MustRegister("network-corrupt", network.NewCorruptExecutor(logger, k8sClient, daemonFactory))
+	registry.MustRegister("network-duplicate", network.NewDuplicateExecutor(logger, k8sClient, daemonFactory))
+	registry.MustRegister("network-partition", network.NewPartitionExecutor(logger, k8sClient, daemonFactory))
+	registry.MustRegister("network-bandwidth", network.NewBandwidthExecutor(logger, k8sClient, daemonFactory))
 
 	reconciler := &controller.ExperimentReconciler{
 		Client:   mgr.GetClient(),
