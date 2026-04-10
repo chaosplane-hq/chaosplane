@@ -1,0 +1,33 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: ChaosWorkflow
+metadata:
+  name: network-then-pod-kill
+  namespace: chaos-testing
+spec:
+  errorHandling:
+    strategy: abort
+  execution:
+    maxParallelism: 2
+  templates:
+    - name: network-delay
+      type: experiment
+      experimentRef:
+        name: network-delay-experiment
+    - name: wait-after-network
+      type: delay
+      delay:
+        duration: 30s
+      dependencies:
+        - network-delay
+    - name: pod-kill
+      type: experiment
+      experimentRef:
+        name: pod-kill-experiment
+      dependencies:
+        - wait-after-network
+    - name: verify-recovery
+      type: suspend
+      suspend:
+        timeout: 5m
+      dependencies:
+        - pod-kill

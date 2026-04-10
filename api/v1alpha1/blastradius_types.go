@@ -27,7 +27,20 @@ type BlastRadiusPolicySpec struct {
 	TargetLimits       TargetLimitsSpec       `json:"targetLimits"`
 	ProtectedResources ProtectedResourcesSpec `json:"protectedResources"`
 	ActionLimits       *ActionLimitsSpec      `json:"actionLimits,omitempty"`
+	TimeWindows        *TimeWindowsSpec       `json:"timeWindows,omitempty"`
 	Enforcement        EnforcementMode        `json:"enforcement"`
+}
+
+type TimeWindowsSpec struct {
+	Allowed []TimeWindow `json:"allowed,omitempty"`
+	Blocked []TimeWindow `json:"blocked,omitempty"`
+}
+
+type TimeWindow struct {
+	Name     string `json:"name"`
+	Schedule string `json:"schedule"` // 5-field cron expression (e.g. "0 9 * * 1-5")
+	Duration string `json:"duration"` // e.g. "8h", "30m"
+	Timezone string `json:"timezone"` // e.g. "Asia/Seoul", "UTC"
 }
 
 type ScopeSpec struct {

@@ -15,6 +15,7 @@ import (
 
 	v1alpha1 "github.com/chaosplane-hq/chaosplane/api/v1alpha1"
 	"github.com/chaosplane-hq/chaosplane/internal/executor"
+	"github.com/chaosplane-hq/chaosplane/internal/probe"
 )
 
 const (
@@ -53,10 +54,14 @@ func (r *ExperimentReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	switch exp.Status.Phase {
 	case "", v1alpha1.PhasePending:
 		return r.reconcilePending(ctx, &exp, log)
+	case v1alpha1.PhaseSteadyStateChecking:
+		return r.reconcileSteadyStateChecking(ctx, &exp, log)
 	case v1alpha1.PhaseRunning:
 		return r.reconcileRunning(ctx, &exp, log)
 	case v1alpha1.PhaseCompleting:
 		return r.reconcileCompleting(ctx, &exp, log)
+	case v1alpha1.PhaseRecovering:
+		return r.reconcileRecovering(ctx, &exp, log)
 	case v1alpha1.PhaseCompleted, v1alpha1.PhaseFailed, v1alpha1.PhaseAborted:
 		return ctrl.Result{}, nil
 	default:
@@ -75,6 +80,19 @@ func (r *ExperimentReconciler) reconcilePending(ctx context.Context, exp *v1alph
 		return r.setFailed(ctx, exp, fmt.Sprintf("validation failed: %v", err))
 	}
 
+	if exp.Spec.SteadyState != nil && len(exp.Spec.SteadyState.Before) > 0 {
+		exp.Status.Phase = v1alpha1.PhaseSteadyStateChecking
+		exp.Status.ObservedGeneration = exp.Generation
+		setCondition(exp, "Progressing", metav1.ConditionTrue, "SteadyStateChecking", "Running before probes")
+
+		if err := r.Status().Update(ctx, exp); err != nil {
+			return ctrl.Result{}, err
+		}
+		r.Recorder.Event(exp, "Normal", "SteadyStateChecking", "Running before steady-state probes")
+		log.Info("transitioning to SteadyStateChecking")
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	now := metav1.Now()
 	exp.Status.Phase = v1alpha1.PhaseRunning
 	exp.Status.StartTime = &now
@@ -89,6 +107,36 @@ func (r *ExperimentReconciler) reconcilePending(ctx context.Context, exp *v1alph
 
 	r.Recorder.Event(exp, "Normal", "Started", "Experiment started")
 	log.Info("transitioning to Running")
+	return ctrl.Result{Requeue: true}, nil
+}
+
+func (r *ExperimentReconciler) reconcileSteadyStateChecking(ctx context.Context, exp *v1alpha1.ChaosExperiment, log *slog.Logger) (ctrl.Result, error) {
+	if exp.Spec.SteadyState == nil {
+		return r.setFailed(ctx, exp, "steady-state spec missing in SteadyStateChecking phase")
+	}
+
+	ok, err := probe.RunAll(ctx, exp.Spec.SteadyState.Before, r.Client)
+	if err != nil {
+		log.Error("before probe error", "error", err)
+		return r.setFailed(ctx, exp, fmt.Sprintf("before probe failed: %v", err))
+	}
+	if !ok {
+		return r.setFailed(ctx, exp, "before steady-state probe did not pass")
+	}
+
+	now := metav1.Now()
+	exp.Status.Phase = v1alpha1.PhaseRunning
+	exp.Status.StartTime = &now
+	setCondition(exp, "Progressing", metav1.ConditionTrue, "ExperimentStarted", "Before probes passed, experiment is running")
+	setCondition(exp, "Available", metav1.ConditionFalse, "ExperimentStarted", "Experiment is running")
+	setCondition(exp, "Degraded", metav1.ConditionFalse, "ExperimentStarted", "Experiment is running")
+
+	if err := r.Status().Update(ctx, exp); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	r.Recorder.Event(exp, "Normal", "Started", "Before probes passed, experiment started")
+	log.Info("before probes passed, transitioning to Running")
 	return ctrl.Result{Requeue: true}, nil
 }
 
@@ -179,6 +227,48 @@ func (r *ExperimentReconciler) reconcileCompleting(ctx context.Context, exp *v1a
 		return r.setFailed(ctx, exp, fmt.Sprintf("rollback failed: %v", rbErr))
 	}
 
+	if exp.Spec.SteadyState != nil && len(exp.Spec.SteadyState.After) > 0 {
+		now := metav1.Now()
+		exp.Status.Phase = v1alpha1.PhaseRecovering
+		exp.Status.RecoveryStartTime = &now
+		setCondition(exp, "Progressing", metav1.ConditionTrue, "Recovering", "Running after probes")
+
+		if err := r.Status().Update(ctx, exp); err != nil {
+			return ctrl.Result{}, err
+		}
+		r.Recorder.Event(exp, "Normal", "Recovering", "Running after steady-state probes")
+		log.Info("transitioning to Recovering")
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	return r.setCompleted(ctx, exp)
+}
+
+func (r *ExperimentReconciler) reconcileRecovering(ctx context.Context, exp *v1alpha1.ChaosExperiment, log *slog.Logger) (ctrl.Result, error) {
+	if exp.Spec.SteadyState == nil {
+		return r.setFailed(ctx, exp, "steady-state spec missing in Recovering phase")
+	}
+
+	if exp.Status.RecoveryStartTime != nil && exp.Spec.SteadyState.RecoveryTimeout.Duration > 0 {
+		elapsed := time.Since(exp.Status.RecoveryStartTime.Time)
+		if elapsed >= exp.Spec.SteadyState.RecoveryTimeout.Duration {
+			log.Warn("recovery timeout exceeded", "elapsed", elapsed)
+			return r.setFailed(ctx, exp, "after steady-state probes did not pass within recovery timeout")
+		}
+	}
+
+	ok, err := probe.RunAll(ctx, exp.Spec.SteadyState.After, r.Client)
+	if err != nil {
+		log.Error("after probe error", "error", err)
+		return r.setFailed(ctx, exp, fmt.Sprintf("after probe failed: %v", err))
+	}
+	if !ok {
+		log.Info("after probes not yet passing, requeueing")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
+	r.Recorder.Event(exp, "Normal", "Recovered", "After probes passed")
+	log.Info("after probes passed, transitioning to Completed")
 	return r.setCompleted(ctx, exp)
 }
 
@@ -187,7 +277,7 @@ func (r *ExperimentReconciler) handleDeletion(ctx context.Context, exp *v1alpha1
 		return ctrl.Result{}, nil
 	}
 
-	if exp.Status.Phase == v1alpha1.PhaseRunning || exp.Status.Phase == v1alpha1.PhaseCompleting {
+	if exp.Status.Phase == v1alpha1.PhaseRunning || exp.Status.Phase == v1alpha1.PhaseCompleting || exp.Status.Phase == v1alpha1.PhaseRecovering {
 		log.Info("handling deletion, running rollback")
 		if exec, err := r.Registry.Get(exp.Spec.Action.Type); err == nil {
 			r.Recorder.Event(exp, "Normal", "RollingBack", "Rolling back due to deletion")

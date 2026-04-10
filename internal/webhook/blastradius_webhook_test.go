@@ -3,6 +3,7 @@ package webhook_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -358,5 +359,204 @@ func TestBlastRadiusWebhook_NoClient(t *testing.T) {
 	resp := v.Handle(context.Background(), makeRequest(exp))
 	if !resp.Allowed {
 		t.Fatalf("expected allowed with no client, got denied: %v", resp.Result)
+	}
+}
+
+func TestBlastRadiusWebhook_TimeWindows_EmptyAlwaysAllowed(t *testing.T) {
+	policy := &v1alpha1.BlastRadiusPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "no-tw-policy"},
+		Spec: v1alpha1.BlastRadiusPolicySpec{
+			Enforcement:        v1alpha1.EnforcementEnforce,
+			Scope:              v1alpha1.ScopeSpec{},
+			TargetLimits:       v1alpha1.TargetLimitsSpec{},
+			ProtectedResources: v1alpha1.ProtectedResourcesSpec{},
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(policy).Build()
+	v := &webhook.BlastRadiusValidator{Client: cl}
+
+	exp := makeExperiment("default", "Pod", "pod-kill", []string{"nginx"}, 2*time.Minute, nil)
+	resp := v.Handle(context.Background(), makeRequest(exp))
+	if !resp.Allowed {
+		t.Fatalf("expected allowed with no time windows, got denied: %v", resp.Result)
+	}
+}
+
+func TestBlastRadiusWebhook_TimeWindows_BlockedDenies(t *testing.T) {
+	// Wednesday 10:30 UTC — blocked window is weekdays 9-17 UTC
+	fixedNow := time.Date(2025, 6, 11, 10, 30, 0, 0, time.UTC)
+
+	policy := &v1alpha1.BlastRadiusPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "blocked-tw-policy"},
+		Spec: v1alpha1.BlastRadiusPolicySpec{
+			Enforcement:        v1alpha1.EnforcementEnforce,
+			Scope:              v1alpha1.ScopeSpec{},
+			TargetLimits:       v1alpha1.TargetLimitsSpec{},
+			ProtectedResources: v1alpha1.ProtectedResourcesSpec{},
+			TimeWindows: &v1alpha1.TimeWindowsSpec{
+				Blocked: []v1alpha1.TimeWindow{
+					{Name: "business-hours", Schedule: "0 9 * * 1-5", Duration: "8h", Timezone: "UTC"},
+				},
+			},
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(policy).Build()
+	v := &webhook.BlastRadiusValidator{
+		Client:  cl,
+		NowFunc: func() time.Time { return fixedNow },
+	}
+
+	exp := makeExperiment("default", "Pod", "pod-kill", []string{"nginx"}, 2*time.Minute, nil)
+	resp := v.Handle(context.Background(), makeRequest(exp))
+	if resp.Allowed {
+		t.Fatal("expected denied during blocked time window")
+	}
+	if resp.Result == nil || !strings.Contains(resp.Result.Message, "blocked by time window") {
+		t.Fatalf("expected blocked time window message, got: %v", resp.Result)
+	}
+}
+
+func TestBlastRadiusWebhook_TimeWindows_AllowedPermits(t *testing.T) {
+	// Wednesday 10:30 UTC — allowed window is weekdays 9-17 UTC
+	fixedNow := time.Date(2025, 6, 11, 10, 30, 0, 0, time.UTC)
+
+	policy := &v1alpha1.BlastRadiusPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "allowed-tw-policy"},
+		Spec: v1alpha1.BlastRadiusPolicySpec{
+			Enforcement:        v1alpha1.EnforcementEnforce,
+			Scope:              v1alpha1.ScopeSpec{},
+			TargetLimits:       v1alpha1.TargetLimitsSpec{},
+			ProtectedResources: v1alpha1.ProtectedResourcesSpec{},
+			TimeWindows: &v1alpha1.TimeWindowsSpec{
+				Allowed: []v1alpha1.TimeWindow{
+					{Name: "business-hours", Schedule: "0 9 * * 1-5", Duration: "8h", Timezone: "UTC"},
+				},
+			},
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(policy).Build()
+	v := &webhook.BlastRadiusValidator{
+		Client:  cl,
+		NowFunc: func() time.Time { return fixedNow },
+	}
+
+	exp := makeExperiment("default", "Pod", "pod-kill", []string{"nginx"}, 2*time.Minute, nil)
+	resp := v.Handle(context.Background(), makeRequest(exp))
+	if !resp.Allowed {
+		t.Fatalf("expected allowed during allowed time window, got denied: %v", resp.Result)
+	}
+}
+
+func TestBlastRadiusWebhook_TimeWindows_AllowedDeniesOutside(t *testing.T) {
+	// Saturday 10:30 UTC — allowed window is weekdays only
+	fixedNow := time.Date(2025, 6, 14, 10, 30, 0, 0, time.UTC)
+
+	policy := &v1alpha1.BlastRadiusPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "allowed-tw-policy"},
+		Spec: v1alpha1.BlastRadiusPolicySpec{
+			Enforcement:        v1alpha1.EnforcementEnforce,
+			Scope:              v1alpha1.ScopeSpec{},
+			TargetLimits:       v1alpha1.TargetLimitsSpec{},
+			ProtectedResources: v1alpha1.ProtectedResourcesSpec{},
+			TimeWindows: &v1alpha1.TimeWindowsSpec{
+				Allowed: []v1alpha1.TimeWindow{
+					{Name: "business-hours", Schedule: "0 9 * * 1-5", Duration: "8h", Timezone: "UTC"},
+				},
+			},
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(policy).Build()
+	v := &webhook.BlastRadiusValidator{
+		Client:  cl,
+		NowFunc: func() time.Time { return fixedNow },
+	}
+
+	exp := makeExperiment("default", "Pod", "pod-kill", []string{"nginx"}, 2*time.Minute, nil)
+	resp := v.Handle(context.Background(), makeRequest(exp))
+	if resp.Allowed {
+		t.Fatal("expected denied outside allowed time window (Saturday)")
+	}
+	if resp.Result == nil || !strings.Contains(resp.Result.Message, "outside allowed time window") {
+		t.Fatalf("expected outside allowed time window message, got: %v", resp.Result)
+	}
+}
+
+func TestBlastRadiusWebhook_TimeWindows_BlockedWinsOverAllowed(t *testing.T) {
+	// Wednesday 10:30 UTC — both allowed and blocked match
+	fixedNow := time.Date(2025, 6, 11, 10, 30, 0, 0, time.UTC)
+
+	policy := &v1alpha1.BlastRadiusPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "conflict-tw-policy"},
+		Spec: v1alpha1.BlastRadiusPolicySpec{
+			Enforcement:        v1alpha1.EnforcementEnforce,
+			Scope:              v1alpha1.ScopeSpec{},
+			TargetLimits:       v1alpha1.TargetLimitsSpec{},
+			ProtectedResources: v1alpha1.ProtectedResourcesSpec{},
+			TimeWindows: &v1alpha1.TimeWindowsSpec{
+				Allowed: []v1alpha1.TimeWindow{
+					{Name: "business-hours", Schedule: "0 9 * * 1-5", Duration: "8h", Timezone: "UTC"},
+				},
+				Blocked: []v1alpha1.TimeWindow{
+					{Name: "maintenance", Schedule: "0 10 * * 3", Duration: "2h", Timezone: "UTC"},
+				},
+			},
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(policy).Build()
+	v := &webhook.BlastRadiusValidator{
+		Client:  cl,
+		NowFunc: func() time.Time { return fixedNow },
+	}
+
+	exp := makeExperiment("default", "Pod", "pod-kill", []string{"nginx"}, 2*time.Minute, nil)
+	resp := v.Handle(context.Background(), makeRequest(exp))
+	if resp.Allowed {
+		t.Fatal("expected denied: blocked should win over allowed")
+	}
+	if resp.Result == nil || !strings.Contains(resp.Result.Message, "blocked by time window") {
+		t.Fatalf("expected blocked message, got: %v", resp.Result)
+	}
+}
+
+func TestBlastRadiusWebhook_TimeWindows_TimezoneHandling(t *testing.T) {
+	// 2025-06-11 10:30 UTC = 2025-06-11 19:30 KST
+	// Allowed window: weekdays 18:00 KST for 4h → 18:00-22:00 KST
+	fixedNow := time.Date(2025, 6, 11, 10, 30, 0, 0, time.UTC)
+
+	policy := &v1alpha1.BlastRadiusPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "tz-policy"},
+		Spec: v1alpha1.BlastRadiusPolicySpec{
+			Enforcement:        v1alpha1.EnforcementEnforce,
+			Scope:              v1alpha1.ScopeSpec{},
+			TargetLimits:       v1alpha1.TargetLimitsSpec{},
+			ProtectedResources: v1alpha1.ProtectedResourcesSpec{},
+			TimeWindows: &v1alpha1.TimeWindowsSpec{
+				Allowed: []v1alpha1.TimeWindow{
+					{Name: "evening-kst", Schedule: "0 18 * * 1-5", Duration: "4h", Timezone: "Asia/Seoul"},
+				},
+			},
+		},
+	}
+	cl := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(policy).Build()
+	v := &webhook.BlastRadiusValidator{
+		Client:  cl,
+		NowFunc: func() time.Time { return fixedNow },
+	}
+
+	exp := makeExperiment("default", "Pod", "pod-kill", []string{"nginx"}, 2*time.Minute, nil)
+	resp := v.Handle(context.Background(), makeRequest(exp))
+	if !resp.Allowed {
+		t.Fatalf("expected allowed: 19:30 KST is within 18:00-22:00 KST window, got denied: %v", resp.Result)
+	}
+
+	// 2025-06-11 08:00 UTC = 2025-06-11 17:00 KST — outside 18:00-22:00 KST
+	earlyNow := time.Date(2025, 6, 11, 8, 0, 0, 0, time.UTC)
+	v2 := &webhook.BlastRadiusValidator{
+		Client:  cl,
+		NowFunc: func() time.Time { return earlyNow },
+	}
+	resp2 := v2.Handle(context.Background(), makeRequest(exp))
+	if resp2.Allowed {
+		t.Fatal("expected denied: 17:00 KST is outside 18:00-22:00 KST window")
 	}
 }

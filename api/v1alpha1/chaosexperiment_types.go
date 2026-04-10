@@ -27,11 +27,65 @@ type ChaosExperimentList struct {
 }
 
 type ChaosExperimentSpec struct {
-	Target    TargetSpec      `json:"target"`
-	Action    ActionSpec      `json:"action"`
-	Duration  metav1.Duration `json:"duration"`
-	Rollback  *RollbackSpec   `json:"rollback,omitempty"`
-	Execution ExecutionSpec   `json:"execution,omitempty"`
+	Target      TargetSpec       `json:"target"`
+	Action      ActionSpec       `json:"action"`
+	Duration    metav1.Duration  `json:"duration"`
+	Rollback    *RollbackSpec    `json:"rollback,omitempty"`
+	Execution   ExecutionSpec    `json:"execution,omitempty"`
+	SteadyState *SteadyStateSpec `json:"steadyState,omitempty"`
+}
+
+type SteadyStateSpec struct {
+	Before          []ProbeSpec     `json:"before,omitempty"`
+	After           []ProbeSpec     `json:"after,omitempty"`
+	RecoveryTimeout metav1.Duration `json:"recoveryTimeout,omitempty"`
+}
+
+// +kubebuilder:validation:Enum=prometheus;http;k8s
+type ProbeType string
+
+const (
+	ProbeTypePrometheus ProbeType = "prometheus"
+	ProbeTypeHTTP       ProbeType = "http"
+	ProbeTypeK8s        ProbeType = "k8s"
+)
+
+type ProbeSpec struct {
+	Name       string           `json:"name"`
+	Type       ProbeType        `json:"type"`
+	Prometheus *PrometheusProbe `json:"prometheus,omitempty"`
+	HTTP       *HTTPProbe       `json:"http,omitempty"`
+	K8s        *K8sProbe        `json:"k8s,omitempty"`
+}
+
+type PrometheusProbe struct {
+	URL       string         `json:"url"`
+	Query     string         `json:"query"`
+	Condition ProbeCondition `json:"condition"`
+}
+
+type ProbeCondition struct {
+	Operator  string  `json:"operator"`
+	Threshold float64 `json:"threshold"`
+}
+
+type HTTPProbe struct {
+	URL            string `json:"url"`
+	Method         string `json:"method,omitempty"`
+	ExpectedStatus int    `json:"expectedStatus,omitempty"`
+	ExpectedBody   string `json:"expectedBody,omitempty"`
+}
+
+type K8sProbe struct {
+	Resource      string            `json:"resource"`
+	Namespace     string            `json:"namespace,omitempty"`
+	LabelSelector string            `json:"labelSelector,omitempty"`
+	FieldSelector string            `json:"fieldSelector,omitempty"`
+	Condition     K8sProbeCondition `json:"condition"`
+}
+
+type K8sProbeCondition struct {
+	MinReady int `json:"minReady"`
 }
 
 type TargetSpec struct {
@@ -56,22 +110,25 @@ type ExecutionSpec struct {
 	Parallelism *int32 `json:"parallelism,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Pending;Running;Completing;Completed;Failed;Aborted
+// +kubebuilder:validation:Enum=Pending;SteadyStateChecking;Running;Completing;Recovering;Completed;Failed;Aborted
 type ExperimentPhase string
 
 const (
-	PhasePending    ExperimentPhase = "Pending"
-	PhaseRunning    ExperimentPhase = "Running"
-	PhaseCompleting ExperimentPhase = "Completing"
-	PhaseCompleted  ExperimentPhase = "Completed"
-	PhaseFailed     ExperimentPhase = "Failed"
-	PhaseAborted    ExperimentPhase = "Aborted"
+	PhasePending             ExperimentPhase = "Pending"
+	PhaseSteadyStateChecking ExperimentPhase = "SteadyStateChecking"
+	PhaseRunning             ExperimentPhase = "Running"
+	PhaseCompleting          ExperimentPhase = "Completing"
+	PhaseRecovering          ExperimentPhase = "Recovering"
+	PhaseCompleted           ExperimentPhase = "Completed"
+	PhaseFailed              ExperimentPhase = "Failed"
+	PhaseAborted             ExperimentPhase = "Aborted"
 )
 
 type ChaosExperimentStatus struct {
 	Phase              ExperimentPhase    `json:"phase,omitempty"`
 	StartTime          *metav1.Time       `json:"startTime,omitempty"`
 	EndTime            *metav1.Time       `json:"endTime,omitempty"`
+	RecoveryStartTime  *metav1.Time       `json:"recoveryStartTime,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	AffectedResources  []string           `json:"affectedResources,omitempty"`

@@ -1,0 +1,15 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: BlastRadiusPolicy
+metadata:
+  name: block-business-hours
+spec:
+  enforcement: Enforce
+  scope: {}
+  targetLimits: {}
+  protectedResources: {}
+  timeWindows:
+    blocked:
+      - name: business-hours
+        schedule: "0 9 * * 1-5"
+        duration: "8h"
+        timezone: UTC

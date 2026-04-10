@@ -71,6 +71,11 @@ func (in *ChaosExperimentSpec) DeepCopyInto(out *ChaosExperimentSpec) {
 		(*in).DeepCopyInto(*out)
 	}
 	in.Execution.DeepCopyInto(&out.Execution)
+	if in.SteadyState != nil {
+		in, out := &in.SteadyState, &out.SteadyState
+		*out = new(SteadyStateSpec)
+		(*in).DeepCopyInto(*out)
+	}
 }
 
 func (in *TargetSpec) DeepCopyInto(out *TargetSpec) {
@@ -123,6 +128,10 @@ func (in *ChaosExperimentStatus) DeepCopyInto(out *ChaosExperimentStatus) {
 	}
 	if in.EndTime != nil {
 		in, out := &in.EndTime, &out.EndTime
+		*out = (*in).DeepCopy()
+	}
+	if in.RecoveryStartTime != nil {
+		in, out := &in.RecoveryStartTime, &out.RecoveryStartTime
 		*out = (*in).DeepCopy()
 	}
 	if in.Conditions != nil {
@@ -201,6 +210,25 @@ func (in *BlastRadiusPolicySpec) DeepCopyInto(out *BlastRadiusPolicySpec) {
 		*out = new(ActionLimitsSpec)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.TimeWindows != nil {
+		in, out := &in.TimeWindows, &out.TimeWindows
+		*out = new(TimeWindowsSpec)
+		(*in).DeepCopyInto(*out)
+	}
+}
+
+func (in *TimeWindowsSpec) DeepCopyInto(out *TimeWindowsSpec) {
+	*out = *in
+	if in.Allowed != nil {
+		in, out := &in.Allowed, &out.Allowed
+		*out = make([]TimeWindow, len(*in))
+		copy(*out, *in)
+	}
+	if in.Blocked != nil {
+		in, out := &in.Blocked, &out.Blocked
+		*out = make([]TimeWindow, len(*in))
+		copy(*out, *in)
+	}
 }
 
 func (in *ScopeSpec) DeepCopyInto(out *ScopeSpec) {
@@ -263,5 +291,233 @@ func (in *ActionLimitsSpec) DeepCopyInto(out *ActionLimitsSpec) {
 		in, out := &in.MaxDuration, &out.MaxDuration
 		*out = new(metav1.Duration)
 		**out = **in
+	}
+}
+
+func (in *SteadyStateSpec) DeepCopyInto(out *SteadyStateSpec) {
+	*out = *in
+	if in.Before != nil {
+		in, out := &in.Before, &out.Before
+		*out = make([]ProbeSpec, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.After != nil {
+		in, out := &in.After, &out.After
+		*out = make([]ProbeSpec, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	out.RecoveryTimeout = in.RecoveryTimeout
+}
+
+func (in *ProbeSpec) DeepCopyInto(out *ProbeSpec) {
+	*out = *in
+	if in.Prometheus != nil {
+		in, out := &in.Prometheus, &out.Prometheus
+		*out = new(PrometheusProbe)
+		**out = **in
+	}
+	if in.HTTP != nil {
+		in, out := &in.HTTP, &out.HTTP
+		*out = new(HTTPProbe)
+		**out = **in
+	}
+	if in.K8s != nil {
+		in, out := &in.K8s, &out.K8s
+		*out = new(K8sProbe)
+		**out = **in
+	}
+}
+
+func (in *PrometheusProbe) DeepCopyInto(out *PrometheusProbe) {
+	*out = *in
+}
+
+func (in *ProbeCondition) DeepCopyInto(out *ProbeCondition) {
+	*out = *in
+}
+
+func (in *HTTPProbe) DeepCopyInto(out *HTTPProbe) {
+	*out = *in
+}
+
+func (in *K8sProbe) DeepCopyInto(out *K8sProbe) {
+	*out = *in
+}
+
+func (in *K8sProbeCondition) DeepCopyInto(out *K8sProbeCondition) {
+	*out = *in
+}
+
+func (in *ChaosWorkflow) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+func (in *ChaosWorkflow) DeepCopy() *ChaosWorkflow {
+	if in == nil {
+		return nil
+	}
+	out := new(ChaosWorkflow)
+	in.DeepCopyInto(out)
+	return out
+}
+
+func (in *ChaosWorkflow) DeepCopyInto(out *ChaosWorkflow) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	in.Spec.DeepCopyInto(&out.Spec)
+	in.Status.DeepCopyInto(&out.Status)
+}
+
+func (in *ChaosWorkflowList) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+func (in *ChaosWorkflowList) DeepCopy() *ChaosWorkflowList {
+	if in == nil {
+		return nil
+	}
+	out := new(ChaosWorkflowList)
+	in.DeepCopyInto(out)
+	return out
+}
+
+func (in *ChaosWorkflowList) DeepCopyInto(out *ChaosWorkflowList) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]ChaosWorkflow, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+}
+
+func (in *ChaosWorkflowSpec) DeepCopyInto(out *ChaosWorkflowSpec) {
+	*out = *in
+	if in.Templates != nil {
+		in, out := &in.Templates, &out.Templates
+		*out = make([]WorkflowTemplate, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.Parameters != nil {
+		in, out := &in.Parameters, &out.Parameters
+		*out = make([]WorkflowParameter, len(*in))
+		copy(*out, *in)
+	}
+	out.ErrorHandling = in.ErrorHandling
+	in.Execution.DeepCopyInto(&out.Execution)
+}
+
+func (in *ChaosWorkflowStatus) DeepCopyInto(out *ChaosWorkflowStatus) {
+	*out = *in
+	if in.StartTime != nil {
+		in, out := &in.StartTime, &out.StartTime
+		*out = (*in).DeepCopy()
+	}
+	if in.EndTime != nil {
+		in, out := &in.EndTime, &out.EndTime
+		*out = (*in).DeepCopy()
+	}
+	if in.TemplateStatuses != nil {
+		in, out := &in.TemplateStatuses, &out.TemplateStatuses
+		*out = make([]TemplateStatus, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.Conditions != nil {
+		in, out := &in.Conditions, &out.Conditions
+		*out = make([]metav1.Condition, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+}
+
+func (in *WorkflowTemplate) DeepCopyInto(out *WorkflowTemplate) {
+	*out = *in
+	if in.ExperimentRef != nil {
+		in, out := &in.ExperimentRef, &out.ExperimentRef
+		*out = new(ExperimentRef)
+		**out = **in
+	}
+	if in.Delay != nil {
+		in, out := &in.Delay, &out.Delay
+		*out = new(DelaySpec)
+		**out = **in
+	}
+	if in.Condition != nil {
+		in, out := &in.Condition, &out.Condition
+		*out = new(ConditionSpec)
+		**out = **in
+	}
+	if in.Parallel != nil {
+		in, out := &in.Parallel, &out.Parallel
+		*out = new(ParallelSpec)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.Suspend != nil {
+		in, out := &in.Suspend, &out.Suspend
+		*out = new(SuspendSpec)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.Dependencies != nil {
+		in, out := &in.Dependencies, &out.Dependencies
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+}
+
+func (in *ParallelSpec) DeepCopyInto(out *ParallelSpec) {
+	*out = *in
+	if in.Templates != nil {
+		in, out := &in.Templates, &out.Templates
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+}
+
+func (in *SuspendSpec) DeepCopyInto(out *SuspendSpec) {
+	*out = *in
+	if in.Timeout != nil {
+		in, out := &in.Timeout, &out.Timeout
+		*out = new(metav1.Duration)
+		**out = **in
+	}
+}
+
+func (in *WorkflowExecutionSpec) DeepCopyInto(out *WorkflowExecutionSpec) {
+	*out = *in
+	if in.MaxParallelism != nil {
+		in, out := &in.MaxParallelism, &out.MaxParallelism
+		*out = new(int32)
+		**out = **in
+	}
+}
+
+func (in *TemplateStatus) DeepCopyInto(out *TemplateStatus) {
+	*out = *in
+	if in.StartTime != nil {
+		in, out := &in.StartTime, &out.StartTime
+		*out = (*in).DeepCopy()
+	}
+	if in.EndTime != nil {
+		in, out := &in.EndTime, &out.EndTime
+		*out = (*in).DeepCopy()
 	}
 }

@@ -1,0 +1,20 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: BlastRadiusPolicy
+metadata:
+  name: conflict-windows
+spec:
+  enforcement: Enforce
+  scope: {}
+  targetLimits: {}
+  protectedResources: {}
+  timeWindows:
+    allowed:
+      - name: business-hours
+        schedule: "0 9 * * 1-5"
+        duration: "8h"
+        timezone: UTC
+    blocked:
+      - name: wednesday-maintenance
+        schedule: "0 10 * * 3"
+        duration: "2h"
+        timezone: UTC

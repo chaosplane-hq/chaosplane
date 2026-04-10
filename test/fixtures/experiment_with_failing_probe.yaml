@@ -1,0 +1,36 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: pod-kill-failing-before-probe
+  namespace: default
+spec:
+  target:
+    kind: Pod
+    namespace: default
+    labelSelector:
+      matchLabels:
+        app: web
+  action:
+    type: pod-kill
+    parameters: {}
+  duration: 30s
+  rollback:
+    enabled: true
+    timeout: 60s
+  steadyState:
+    before:
+      - name: app-not-responding
+        type: http
+        http:
+          url: http://web.default.svc:8080/healthz
+          expectedStatus: 200
+          expectedBody: '"status"\s*:\s*"healthy"'
+      - name: insufficient-pods
+        type: k8s
+        k8s:
+          resource: Pod
+          namespace: default
+          labelSelector: app=web
+          condition:
+            minReady: 10
+    recoveryTimeout: 60s

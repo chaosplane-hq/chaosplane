@@ -1,0 +1,15 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: BlastRadiusPolicy
+metadata:
+  name: allow-maintenance-window
+spec:
+  enforcement: Enforce
+  scope: {}
+  targetLimits: {}
+  protectedResources: {}
+  timeWindows:
+    allowed:
+      - name: maintenance-window
+        schedule: "0 2 * * 6"
+        duration: "4h"
+        timezone: Asia/Seoul

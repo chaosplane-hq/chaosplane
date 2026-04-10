@@ -1,0 +1,57 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: pod-kill-with-steady-state
+  namespace: default
+spec:
+  target:
+    kind: Pod
+    namespace: default
+    labelSelector:
+      matchLabels:
+        app: web
+  action:
+    type: pod-kill
+    parameters: {}
+  duration: 30s
+  rollback:
+    enabled: true
+    timeout: 60s
+  steadyState:
+    before:
+      - name: app-responding
+        type: http
+        http:
+          url: http://web.default.svc:8080/healthz
+          expectedStatus: 200
+      - name: enough-pods-running
+        type: k8s
+        k8s:
+          resource: Pod
+          namespace: default
+          labelSelector: app=web
+          condition:
+            minReady: 3
+    after:
+      - name: app-recovered
+        type: http
+        http:
+          url: http://web.default.svc:8080/healthz
+          expectedStatus: 200
+      - name: pods-recovered
+        type: k8s
+        k8s:
+          resource: Pod
+          namespace: default
+          labelSelector: app=web
+          condition:
+            minReady: 3
+      - name: error-rate-normal
+        type: prometheus
+        prometheus:
+          url: http://prometheus.monitoring.svc:9090
+          query: rate(http_requests_total{status=~"5.."}[5m])
+          condition:
+            operator: "<"
+            threshold: 0.01
+    recoveryTimeout: 120s

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,8 +19,9 @@ import (
 )
 
 type BlastRadiusValidator struct {
-	Client client.Client
-	Logger *slog.Logger
+	Client  client.Client
+	Logger  *slog.Logger
+	NowFunc func() time.Time
 }
 
 var _ admission.Handler = (*BlastRadiusValidator)(nil)
@@ -56,7 +58,7 @@ func (v *BlastRadiusValidator) Handle(ctx context.Context, req admission.Request
 			continue
 		}
 
-		result := evaluatePolicy(policy, experiment)
+		result := evaluatePolicyAt(policy, experiment, v.now())
 		if result.allowed {
 			continue
 		}
@@ -87,33 +89,31 @@ type evalResult struct {
 	reason  string
 }
 
-func evaluatePolicy(policy *v1alpha1.BlastRadiusPolicy, exp *v1alpha1.ChaosExperiment) evalResult {
-	// Step 1: unknown/disabled enforcement → allow
+func evaluatePolicyAt(policy *v1alpha1.BlastRadiusPolicy, exp *v1alpha1.ChaosExperiment, now time.Time) evalResult {
 	if policy.Spec.Enforcement != v1alpha1.EnforcementEnforce && policy.Spec.Enforcement != v1alpha1.EnforcementAudit {
 		return evalResult{allowed: true}
 	}
 
-	// Step 2: protected resources
 	if reason := checkProtectedResources(policy, exp); reason != "" {
 		return evalResult{allowed: false, reason: reason}
 	}
 
-	// Step 3: protected namespaces
 	if reason := checkProtectedNamespaces(policy, exp); reason != "" {
 		return evalResult{allowed: false, reason: reason}
 	}
 
-	// Step 4: action limits
 	if reason := checkActionLimits(policy, exp); reason != "" {
 		return evalResult{allowed: false, reason: reason}
 	}
 
-	// Step 5: target limits
+	if reason := checkTimeWindows(policy, now); reason != "" {
+		return evalResult{allowed: false, reason: reason}
+	}
+
 	if reason := checkTargetLimits(policy, exp); reason != "" {
 		return evalResult{allowed: false, reason: reason}
 	}
 
-	// Step 6: all checks passed
 	return evalResult{allowed: true}
 }
 
@@ -267,4 +267,124 @@ func NewBlastRadiusHealthHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+}
+
+func (v *BlastRadiusValidator) now() time.Time {
+	if v.NowFunc != nil {
+		return v.NowFunc()
+	}
+	return time.Now()
+}
+
+func checkTimeWindows(policy *v1alpha1.BlastRadiusPolicy, now time.Time) string {
+	tw := policy.Spec.TimeWindows
+	if tw == nil {
+		return ""
+	}
+
+	for _, b := range tw.Blocked {
+		if isInTimeWindow(b, now) {
+			return fmt.Sprintf("blocked by time window %q", b.Name)
+		}
+	}
+
+	if len(tw.Allowed) == 0 {
+		return ""
+	}
+
+	for _, a := range tw.Allowed {
+		if isInTimeWindow(a, now) {
+			return ""
+		}
+	}
+	return "outside allowed time window"
+}
+
+func isInTimeWindow(tw v1alpha1.TimeWindow, now time.Time) bool {
+	loc, err := time.LoadLocation(tw.Timezone)
+	if err != nil {
+		return false
+	}
+	now = now.In(loc)
+
+	dur, err := time.ParseDuration(tw.Duration)
+	if err != nil {
+		return false
+	}
+
+	maxMinutes := int(dur.Minutes())
+	if maxMinutes < 1 {
+		maxMinutes = 1
+	}
+
+	for i := 0; i <= maxMinutes; i++ {
+		candidate := now.Add(-time.Duration(i) * time.Minute).Truncate(time.Minute)
+		if cronMatches(tw.Schedule, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func cronMatches(schedule string, t time.Time) bool {
+	fields := strings.Fields(schedule)
+	if len(fields) != 5 {
+		return false
+	}
+	return fieldMatches(fields[0], t.Minute(), 0, 59) &&
+		fieldMatches(fields[1], t.Hour(), 0, 23) &&
+		fieldMatches(fields[2], t.Day(), 1, 31) &&
+		fieldMatches(fields[3], int(t.Month()), 1, 12) &&
+		fieldMatches(fields[4], int(t.Weekday()), 0, 6)
+}
+
+func fieldMatches(field string, value, min, max int) bool {
+	if field == "*" {
+		return true
+	}
+	for _, part := range strings.Split(field, ",") {
+		if matchCronPart(part, value, min, max) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchCronPart(part string, value, min, max int) bool {
+	if strings.Contains(part, "/") {
+		tokens := strings.SplitN(part, "/", 2)
+		step, err := strconv.Atoi(tokens[1])
+		if err != nil || step <= 0 {
+			return false
+		}
+		base := tokens[0]
+		start := min
+		if base != "*" {
+			s, err := strconv.Atoi(base)
+			if err != nil {
+				return false
+			}
+			start = s
+		}
+		if value < start {
+			return false
+		}
+		return (value-start)%step == 0
+	}
+
+	if strings.Contains(part, "-") {
+		bounds := strings.SplitN(part, "-", 2)
+		lo, err1 := strconv.Atoi(bounds[0])
+		hi, err2 := strconv.Atoi(bounds[1])
+		if err1 != nil || err2 != nil {
+			return false
+		}
+		return value >= lo && value <= hi
+	}
+
+	n, err := strconv.Atoi(part)
+	if err != nil {
+		return false
+	}
+	return value == n
 }
