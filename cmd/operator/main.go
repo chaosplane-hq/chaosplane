@@ -6,6 +6,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -37,7 +38,24 @@ func main() {
 	}
 
 	registry := executor.NewRegistry()
-	registry.Register("pod-kill", pod.NewKillExecutor(logger))
+
+	k8sClient := mgr.GetClient()
+	restConfig := ctrl.GetConfigOrDie()
+	clientset, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		logger.Error("unable to create kubernetes clientset", "error", err)
+		os.Exit(1)
+	}
+	daemonFactory := pod.DefaultDaemonClientFactory
+
+	registry.MustRegister("pod-kill", pod.NewKillExecutor(logger, k8sClient, clientset))
+	registry.MustRegister("container-kill", pod.NewContainerKillExecutor(logger, k8sClient, daemonFactory))
+	registry.MustRegister("pod-cpu-stress", pod.NewCPUStressExecutor(logger, k8sClient, daemonFactory))
+	registry.MustRegister("pod-memory-stress", pod.NewMemoryStressExecutor(logger, k8sClient, daemonFactory))
+	registry.MustRegister("pod-io-stress", pod.NewIOStressExecutor(logger, k8sClient, daemonFactory))
+	registry.MustRegister("pod-dns-error", pod.NewDNSErrorExecutor(logger, k8sClient, daemonFactory))
+	registry.MustRegister("pod-http-abort", pod.NewHTTPAbortExecutor(logger, k8sClient, daemonFactory))
+	registry.MustRegister("pod-http-delay", pod.NewHTTPDelayExecutor(logger, k8sClient, daemonFactory))
 
 	reconciler := &controller.ExperimentReconciler{
 		Client:   mgr.GetClient(),
