@@ -87,6 +87,10 @@ test-integration: ## Integration tests
 e2e: ## E2E tests (kind)
 	go test -race -tags=e2e -count=1 -timeout=30m ./test/e2e/...
 
+.PHONY: e2e-full
+e2e-full: ## Full E2E tests — all 20 executors (kind)
+	go test -race -tags=e2e -v -count=1 -timeout=30m ./test/e2e/...
+
 ##@ Code Quality
 
 .PHONY: lint

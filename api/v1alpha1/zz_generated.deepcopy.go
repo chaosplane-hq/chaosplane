@@ -547,3 +547,224 @@ func (in *TemplateStatus) DeepCopyInto(out *TemplateStatus) {
 		*out = (*in).DeepCopy()
 	}
 }
+
+func (in *ChaosAgent) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+func (in *ChaosAgent) DeepCopy() *ChaosAgent {
+	if in == nil {
+		return nil
+	}
+	out := new(ChaosAgent)
+	in.DeepCopyInto(out)
+	return out
+}
+
+func (in *ChaosAgent) DeepCopyInto(out *ChaosAgent) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	in.Spec.DeepCopyInto(&out.Spec)
+	in.Status.DeepCopyInto(&out.Status)
+}
+
+func (in *ChaosAgentList) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+func (in *ChaosAgentList) DeepCopy() *ChaosAgentList {
+	if in == nil {
+		return nil
+	}
+	out := new(ChaosAgentList)
+	in.DeepCopyInto(out)
+	return out
+}
+
+func (in *ChaosAgentList) DeepCopyInto(out *ChaosAgentList) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]ChaosAgent, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+}
+
+func (in *ChaosAgentSpec) DeepCopyInto(out *ChaosAgentSpec) {
+	*out = *in
+	out.EnvironmentRef = in.EnvironmentRef
+	out.TokenSecretRef = in.TokenSecretRef
+	out.HeartbeatInterval = in.HeartbeatInterval
+	if in.TLS != nil {
+		in, out := &in.TLS, &out.TLS
+		*out = new(AgentTLSSpec)
+		**out = **in
+	}
+}
+
+func (in *ChaosAgentStatus) DeepCopyInto(out *ChaosAgentStatus) {
+	*out = *in
+	if in.LastHeartbeat != nil {
+		in, out := &in.LastHeartbeat, &out.LastHeartbeat
+		*out = (*in).DeepCopy()
+	}
+	if in.RegisteredAt != nil {
+		in, out := &in.RegisteredAt, &out.RegisteredAt
+		*out = (*in).DeepCopy()
+	}
+	if in.ClusterInfo != nil {
+		in, out := &in.ClusterInfo, &out.ClusterInfo
+		*out = new(ClusterInfo)
+		**out = **in
+	}
+	if in.Conditions != nil {
+		in, out := &in.Conditions, &out.Conditions
+		*out = make([]metav1.Condition, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+}
+
+func (in *AgentEnvironmentRef) DeepCopyInto(out *AgentEnvironmentRef) {
+	*out = *in
+}
+
+func (in *SecretKeyRef) DeepCopyInto(out *SecretKeyRef) {
+	*out = *in
+}
+
+func (in *AgentTLSSpec) DeepCopyInto(out *AgentTLSSpec) {
+	*out = *in
+}
+
+func (in *ClusterInfo) DeepCopyInto(out *ClusterInfo) {
+	*out = *in
+}
+
+func (in *ChaosSchedule) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+func (in *ChaosSchedule) DeepCopy() *ChaosSchedule {
+	if in == nil {
+		return nil
+	}
+	out := new(ChaosSchedule)
+	in.DeepCopyInto(out)
+	return out
+}
+
+func (in *ChaosSchedule) DeepCopyInto(out *ChaosSchedule) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	in.Spec.DeepCopyInto(&out.Spec)
+	in.Status.DeepCopyInto(&out.Status)
+}
+
+func (in *ChaosScheduleList) DeepCopyObject() runtime.Object {
+	if c := in.DeepCopy(); c != nil {
+		return c
+	}
+	return nil
+}
+
+func (in *ChaosScheduleList) DeepCopy() *ChaosScheduleList {
+	if in == nil {
+		return nil
+	}
+	out := new(ChaosScheduleList)
+	in.DeepCopyInto(out)
+	return out
+}
+
+func (in *ChaosScheduleList) DeepCopyInto(out *ChaosScheduleList) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]ChaosSchedule, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+}
+
+func (in *ChaosScheduleSpec) DeepCopyInto(out *ChaosScheduleSpec) {
+	*out = *in
+	if in.StartingDeadlineSeconds != nil {
+		in, out := &in.StartingDeadlineSeconds, &out.StartingDeadlineSeconds
+		*out = new(int64)
+		**out = **in
+	}
+	if in.SuccessfulRunsLimit != nil {
+		in, out := &in.SuccessfulRunsLimit, &out.SuccessfulRunsLimit
+		*out = new(int32)
+		**out = **in
+	}
+	if in.FailedRunsLimit != nil {
+		in, out := &in.FailedRunsLimit, &out.FailedRunsLimit
+		*out = new(int32)
+		**out = **in
+	}
+	if in.ExperimentTemplate != nil {
+		in, out := &in.ExperimentTemplate, &out.ExperimentTemplate
+		*out = new(ChaosExperimentSpec)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.WorkflowTemplate != nil {
+		in, out := &in.WorkflowTemplate, &out.WorkflowTemplate
+		*out = new(ChaosWorkflowSpec)
+		(*in).DeepCopyInto(*out)
+	}
+}
+
+func (in *ChaosScheduleStatus) DeepCopyInto(out *ChaosScheduleStatus) {
+	*out = *in
+	if in.LastScheduleTime != nil {
+		in, out := &in.LastScheduleTime, &out.LastScheduleTime
+		*out = (*in).DeepCopy()
+	}
+	if in.NextScheduleTime != nil {
+		in, out := &in.NextScheduleTime, &out.NextScheduleTime
+		*out = (*in).DeepCopy()
+	}
+	if in.ActiveRuns != nil {
+		in, out := &in.ActiveRuns, &out.ActiveRuns
+		*out = make([]ScheduleRunRef, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.Conditions != nil {
+		in, out := &in.Conditions, &out.Conditions
+		*out = make([]metav1.Condition, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+}
+
+func (in *ScheduleRunRef) DeepCopyInto(out *ScheduleRunRef) {
+	*out = *in
+	if in.StartTime != nil {
+		in, out := &in.StartTime, &out.StartTime
+		*out = (*in).DeepCopy()
+	}
+}

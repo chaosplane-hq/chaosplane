@@ -14,6 +14,7 @@ import (
 	v1alpha1 "github.com/chaosplane-hq/chaosplane/api/v1alpha1"
 	"github.com/chaosplane-hq/chaosplane/internal/controller"
 	"github.com/chaosplane-hq/chaosplane/internal/executor"
+	awsexec "github.com/chaosplane-hq/chaosplane/internal/executor/aws"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/network"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/node"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/pod"
@@ -76,6 +77,16 @@ func main() {
 
 	registry.MustRegister("stress-cpu", stress.NewCPUExecutor(logger, k8sClient, stressDaemonFactory))
 	registry.MustRegister("stress-memory", stress.NewMemoryExecutor(logger, k8sClient, stressDaemonFactory))
+
+	registry.MustRegister("ebpf-network-delay", network.NewEBPFDelayExecutor(logger, k8sClient, daemonFactory))
+	registry.MustRegister("ebpf-network-loss", network.NewEBPFLossExecutor(logger, k8sClient, daemonFactory))
+	registry.MustRegister("ebpf-dns-chaos", network.NewEBPFDNSExecutor(logger, k8sClient, daemonFactory))
+
+	registry.MustRegister("aws-ec2-stop", awsexec.NewEC2StopExecutor(logger))
+	registry.MustRegister("aws-ec2-terminate", awsexec.NewEC2TerminateExecutor(logger))
+	registry.MustRegister("aws-rds-failover", awsexec.NewRDSFailoverExecutor(logger))
+	registry.MustRegister("aws-ecs-stop-task", awsexec.NewECSStopTaskExecutor(logger))
+	registry.MustRegister("aws-az-failure", awsexec.NewAZFailureExecutor(logger))
 
 	reconciler := &controller.ExperimentReconciler{
 		Client:   mgr.GetClient(),
