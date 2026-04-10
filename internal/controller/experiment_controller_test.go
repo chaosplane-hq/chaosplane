@@ -9,6 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/fake"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -20,7 +21,7 @@ import (
 
 func newReconciler() *controller.ExperimentReconciler {
 	registry := executor.NewRegistry()
-	registry.Register("pod-kill", pod.NewKillExecutor(slog.Default()))
+	registry.Register("pod-kill", pod.NewKillExecutor(slog.Default(), k8sClient, fake.NewSimpleClientset()))
 	return &controller.ExperimentReconciler{
 		Client:   k8sClient,
 		Scheme:   scheme,
