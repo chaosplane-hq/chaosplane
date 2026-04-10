@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package daemon.v1;
+
+option go_package = "github.com/chaosplane-hq/chaosplane/gen/daemon/v1;daemonv1";
+
+service ChaosDaemon {
+  rpc ExecNetworkChaos(NetworkChaosRequest) returns (NetworkChaosResponse);
+  rpc ExecStressChaos(StressChaosRequest) returns (StressChaosResponse);
+  rpc CancelChaos(CancelRequest) returns (CancelResponse);
+}
+
+message NetworkChaosRequest {
+  string experiment_id = 1;
+  string action = 2;        // delay, loss, corrupt, duplicate
+  string target_iface = 3;
+  map<string, string> parameters = 4;
+}
+
+message NetworkChaosResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message StressChaosRequest {
+  string experiment_id = 1;
+  string stressor_type = 2; // cpu, memory, io
+  map<string, string> parameters = 3;
+}
+
+message StressChaosResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message CancelRequest {
+  string experiment_id = 1;
+}
+
+message CancelResponse {
+  bool success = 1;
+  string message = 2;
+}
