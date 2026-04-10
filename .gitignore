@@ -39,3 +39,8 @@ kubeconfig
 
 # Sisyphus state
 .sisyphus/
+bin/
+agent
+daemon
+operator
+server
