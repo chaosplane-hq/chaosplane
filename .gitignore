@@ -1,16 +1,24 @@
-# Binary output
+# Binaries
 bin/
 chaosctl
-
-# Go
+agent
+daemon
+operator
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
 *.test
-*.out
+
+# Go
 vendor/
+*.out
+cover.out
+coverage.html
+
+# Generated (buf)
+# gen/ is tracked — generated proto stubs
 
 # IDE
 .idea/
@@ -18,29 +26,27 @@ vendor/
 *.swp
 *.swo
 *~
+.project
+.settings/
 
 # OS
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
-# Build
+# Build / Artifacts
 dist/
-cover.out
-coverage.html
+tmp/
 
-# Kind
+# Kind / K8s
 kubeconfig
+*.kubeconfig
 
 # Tilt
 .tiltbuild/
 
-# Generated (tracked, but ignore local changes)
-# zz_generated.deepcopy.go — tracked via make generate
-
-# Sisyphus state
-.sisyphus/
-bin/
-agent
-daemon
-operator
-server
+# Debug
+__debug_bin*
+debug
+*.prof
