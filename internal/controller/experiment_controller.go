@@ -71,13 +71,17 @@ func (r *ExperimentReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 }
 
 func (r *ExperimentReconciler) reconcilePending(ctx context.Context, exp *v1alpha1.ChaosExperiment, log *slog.Logger) (ctrl.Result, error) {
+	expRef := fmt.Sprintf("%s/%s", exp.Namespace, exp.Name)
+
 	exec, err := r.Registry.Get(exp.Spec.Action.Type)
 	if err != nil {
-		return r.setFailed(ctx, exp, fmt.Sprintf("no executor for action %q", exp.Spec.Action.Type))
+		log.Error("no executor found", "experiment", expRef, "action", exp.Spec.Action.Type)
+		return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: no executor for action %q", expRef, exp.Spec.Action.Type))
 	}
 
 	if err := exec.Validate(exp); err != nil {
-		return r.setFailed(ctx, exp, fmt.Sprintf("validation failed: %v", err))
+		log.Error("validation failed", "experiment", expRef, "error", err)
+		return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: validation failed: %v", expRef, err))
 	}
 
 	if exp.Spec.SteadyState != nil && len(exp.Spec.SteadyState.Before) > 0 {
@@ -88,8 +92,8 @@ func (r *ExperimentReconciler) reconcilePending(ctx context.Context, exp *v1alph
 		if err := r.Status().Update(ctx, exp); err != nil {
 			return ctrl.Result{}, err
 		}
-		r.Recorder.Event(exp, "Normal", "SteadyStateChecking", "Running before steady-state probes")
-		log.Info("transitioning to SteadyStateChecking")
+		r.Recorder.Eventf(exp, "Normal", "SteadyStateChecking", "Experiment %s: running %d before steady-state probes", expRef, len(exp.Spec.SteadyState.Before))
+		log.Info("transitioning to SteadyStateChecking", "experiment", expRef, "probeCount", len(exp.Spec.SteadyState.Before))
 		return ctrl.Result{Requeue: true}, nil
 	}
 
@@ -105,24 +109,33 @@ func (r *ExperimentReconciler) reconcilePending(ctx context.Context, exp *v1alph
 		return ctrl.Result{}, err
 	}
 
-	r.Recorder.Event(exp, "Normal", "Started", "Experiment started")
-	log.Info("transitioning to Running")
+	r.Recorder.Eventf(exp, "Normal", "Started", "Experiment %s started with action %q, duration %s", expRef, exp.Spec.Action.Type, exp.Spec.Duration.Duration)
+	log.Info("transitioning to Running", "experiment", expRef, "action", exp.Spec.Action.Type, "duration", exp.Spec.Duration.Duration)
 	return ctrl.Result{Requeue: true}, nil
 }
 
 func (r *ExperimentReconciler) reconcileSteadyStateChecking(ctx context.Context, exp *v1alpha1.ChaosExperiment, log *slog.Logger) (ctrl.Result, error) {
+	expRef := fmt.Sprintf("%s/%s", exp.Namespace, exp.Name)
+
 	if exp.Spec.SteadyState == nil {
-		return r.setFailed(ctx, exp, "steady-state spec missing in SteadyStateChecking phase")
+		log.Error("steady-state spec missing", "experiment", expRef, "phase", "SteadyStateChecking")
+		return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: steady-state spec missing in SteadyStateChecking phase", expRef))
 	}
 
+	r.Recorder.Eventf(exp, "Normal", "SteadyStateCheckStarted", "Experiment %s: evaluating %d before probes", expRef, len(exp.Spec.SteadyState.Before))
 	ok, err := probe.RunAll(ctx, exp.Spec.SteadyState.Before, r.Client)
 	if err != nil {
-		log.Error("before probe error", "error", err)
-		return r.setFailed(ctx, exp, fmt.Sprintf("before probe failed: %v", err))
+		log.Error("before probe error", "experiment", expRef, "error", err)
+		r.Recorder.Eventf(exp, "Warning", "SteadyStateCheckFailed", "Experiment %s: before probe error: %v", expRef, err)
+		return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: before probe failed: %v", expRef, err))
 	}
 	if !ok {
-		return r.setFailed(ctx, exp, "before steady-state probe did not pass")
+		log.Warn("before steady-state probe did not pass", "experiment", expRef)
+		r.Recorder.Eventf(exp, "Warning", "SteadyStateCheckFailed", "Experiment %s: before steady-state probe did not pass", expRef)
+		return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: before steady-state probe did not pass", expRef))
 	}
+
+	r.Recorder.Eventf(exp, "Normal", "SteadyStateCheckPassed", "Experiment %s: all before probes passed", expRef)
 
 	now := metav1.Now()
 	exp.Status.Phase = v1alpha1.PhaseRunning
@@ -135,37 +148,41 @@ func (r *ExperimentReconciler) reconcileSteadyStateChecking(ctx context.Context,
 		return ctrl.Result{}, err
 	}
 
-	r.Recorder.Event(exp, "Normal", "Started", "Before probes passed, experiment started")
-	log.Info("before probes passed, transitioning to Running")
+	r.Recorder.Eventf(exp, "Normal", "Started", "Experiment %s: before probes passed, experiment started with action %q", expRef, exp.Spec.Action.Type)
+	log.Info("before probes passed, transitioning to Running", "experiment", expRef)
 	return ctrl.Result{Requeue: true}, nil
 }
 
 func (r *ExperimentReconciler) reconcileRunning(ctx context.Context, exp *v1alpha1.ChaosExperiment, log *slog.Logger) (ctrl.Result, error) {
+	expRef := fmt.Sprintf("%s/%s", exp.Namespace, exp.Name)
+
 	if exp.Annotations[abortAnnotation] == "true" {
-		log.Info("abort annotation detected, rolling back")
+		log.Info("abort annotation detected, rolling back", "experiment", expRef)
+		r.Recorder.Eventf(exp, "Warning", "AbortTriggered", "Experiment %s: abort annotation detected, initiating rollback", expRef)
 		return r.handleAbort(ctx, exp, log)
 	}
 
 	if len(exp.Spec.AbortConditions) > 0 {
 		triggered, action, err := r.checkAbortConditions(ctx, exp, log)
 		if err != nil {
-			log.Error("abort condition check failed", "error", err)
+			log.Error("abort condition check failed", "experiment", expRef, "error", err)
 		} else if triggered {
 			switch action {
 			case v1alpha1.AbortActionRollback:
-				log.Info("abort condition triggered, rolling back")
-				r.Recorder.Event(exp, "Warning", "AbortConditionTriggered", "Abort condition met, rolling back")
+				log.Info("abort condition triggered, rolling back", "experiment", expRef)
+				r.Recorder.Eventf(exp, "Warning", "AbortConditionTriggered", "Experiment %s: abort condition met, rolling back", expRef)
 				return r.transitionToCompleting(ctx, exp, log)
 			default:
-				log.Info("abort condition triggered, aborting")
-				r.Recorder.Event(exp, "Warning", "AbortConditionTriggered", "Abort condition met, aborting")
+				log.Info("abort condition triggered, aborting", "experiment", expRef)
+				r.Recorder.Eventf(exp, "Warning", "AbortConditionTriggered", "Experiment %s: abort condition met, aborting", expRef)
 				return r.handleAbort(ctx, exp, log)
 			}
 		}
 	}
 
 	if exp.Status.StartTime == nil {
-		return r.setFailed(ctx, exp, "running experiment has no startTime")
+		log.Error("running experiment has no startTime", "experiment", expRef)
+		return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: running experiment has no startTime", expRef))
 	}
 
 	elapsed := time.Since(exp.Status.StartTime.Time)
@@ -173,31 +190,36 @@ func (r *ExperimentReconciler) reconcileRunning(ctx context.Context, exp *v1alph
 	timeout := duration * 2
 
 	if elapsed >= timeout {
-		log.Warn("experiment timed out", "elapsed", elapsed, "timeout", timeout)
-		r.Recorder.Event(exp, "Warning", "Timeout", "Experiment timed out, forcing rollback")
+		log.Warn("experiment timed out", "experiment", expRef, "elapsed", elapsed, "timeout", timeout)
+		r.Recorder.Eventf(exp, "Warning", "Timeout", "Experiment %s: timed out after %s (timeout: %s), forcing rollback", expRef, elapsed.Round(time.Second), timeout)
 		return r.transitionToCompleting(ctx, exp, log)
 	}
 
 	if elapsed >= duration {
-		log.Info("duration elapsed, transitioning to Completing")
+		log.Info("duration elapsed, transitioning to Completing", "experiment", expRef, "elapsed", elapsed, "duration", duration)
+		r.Recorder.Eventf(exp, "Normal", "DurationElapsed", "Experiment %s: duration %s elapsed, transitioning to rollback", expRef, duration)
 		return r.transitionToCompleting(ctx, exp, log)
 	}
 
 	exec, err := r.Registry.Get(exp.Spec.Action.Type)
 	if err != nil {
-		return r.setFailed(ctx, exp, fmt.Sprintf("executor lost: %v", err))
+		log.Error("executor lost during running phase", "experiment", expRef, "action", exp.Spec.Action.Type)
+		return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: executor for action %q lost during running phase: %v", expRef, exp.Spec.Action.Type, err))
 	}
 
-	r.Recorder.Event(exp, "Normal", "Executing", "Executing chaos action")
+	r.Recorder.Eventf(exp, "Normal", "Executing", "Experiment %s: executing action %q", expRef, exp.Spec.Action.Type)
 	if err := exec.Execute(ctx, exp); err != nil {
-		log.Error("execute failed, attempting rollback", "error", err)
-		r.Recorder.Event(exp, "Warning", "ExecuteFailed", fmt.Sprintf("Execution failed: %v", err))
+		log.Error("execute failed, attempting rollback", "experiment", expRef, "action", exp.Spec.Action.Type, "error", err)
+		r.Recorder.Eventf(exp, "Warning", "ExecuteFailed", "Experiment %s: action %q failed: %v", expRef, exp.Spec.Action.Type, err)
+		r.Recorder.Eventf(exp, "Normal", "RollbackStarted", "Experiment %s: initiating rollback after execution failure", expRef)
 		rbErr := exec.Rollback(ctx, exp)
 		if rbErr != nil {
-			r.Recorder.Event(exp, "Warning", "RollbackFailed", fmt.Sprintf("Rollback also failed: %v", rbErr))
-			return r.setFailed(ctx, exp, fmt.Sprintf("execution failed: %v; rollback also failed: %v", err, rbErr))
+			log.Error("rollback also failed", "experiment", expRef, "executeError", err, "rollbackError", rbErr)
+			r.Recorder.Eventf(exp, "Warning", "RollbackFailed", "Experiment %s: rollback also failed: %v", expRef, rbErr)
+			return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: execution failed: %v; rollback also failed: %v", expRef, err, rbErr))
 		}
-		return r.setFailed(ctx, exp, fmt.Sprintf("execution failed: %v", err))
+		r.Recorder.Eventf(exp, "Normal", "RollbackCompleted", "Experiment %s: rollback completed after execution failure", expRef)
+		return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: execution failed: %v", expRef, err))
 	}
 
 	remaining := duration - elapsed
@@ -237,18 +259,22 @@ func (r *ExperimentReconciler) checkAbortConditions(ctx context.Context, exp *v1
 }
 
 func (r *ExperimentReconciler) handleAbort(ctx context.Context, exp *v1alpha1.ChaosExperiment, log *slog.Logger) (ctrl.Result, error) {
+	expRef := fmt.Sprintf("%s/%s", exp.Namespace, exp.Name)
+
 	exec, err := r.Registry.Get(exp.Spec.Action.Type)
 	if err != nil {
-		return r.setFailed(ctx, exp, fmt.Sprintf("abort: executor lost: %v", err))
+		log.Error("executor lost during abort", "experiment", expRef, "action", exp.Spec.Action.Type)
+		return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: abort: executor for action %q lost: %v", expRef, exp.Spec.Action.Type, err))
 	}
 
-	r.Recorder.Event(exp, "Normal", "RollingBack", "Rolling back due to abort")
+	r.Recorder.Eventf(exp, "Normal", "RollbackStarted", "Experiment %s: rolling back due to abort", expRef)
 	if rbErr := exec.Rollback(ctx, exp); rbErr != nil {
-		log.Error("rollback during abort failed", "error", rbErr)
-		r.Recorder.Event(exp, "Warning", "RollbackFailed", fmt.Sprintf("Rollback failed during abort: %v", rbErr))
-		return r.setFailed(ctx, exp, fmt.Sprintf("abort rollback failed: %v", rbErr))
+		log.Error("rollback during abort failed", "experiment", expRef, "error", rbErr)
+		r.Recorder.Eventf(exp, "Warning", "RollbackFailed", "Experiment %s: rollback failed during abort: %v", expRef, rbErr)
+		return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: abort rollback failed: %v", expRef, rbErr))
 	}
 
+	r.Recorder.Eventf(exp, "Normal", "RollbackCompleted", "Experiment %s: rollback completed during abort", expRef)
 	return r.setAborted(ctx, exp)
 }
 

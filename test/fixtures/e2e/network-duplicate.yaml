@@ -1,0 +1,20 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: e2e-network-duplicate
+  namespace: default
+  labels:
+    test: e2e
+spec:
+  target:
+    kind: Pod
+    namespace: default
+    labelSelector:
+      matchLabels:
+        app: e2e-target
+  action:
+    type: network-duplicate
+    parameters:
+      duplicatePercent: "15"
+      interface: eth0
+  duration: 30s

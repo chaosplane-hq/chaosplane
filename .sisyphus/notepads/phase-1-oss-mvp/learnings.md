@@ -33,3 +33,17 @@
 - `anchore/sbom-action/download-syft@v0` installs syft for GoReleaser's `sboms` section
 - Helm OCI push: `helm push <chart>.tgz oci://ghcr.io/<org>/helm-charts` — simpler than GitHub Pages approach
 - helm-release job extracts semver from tag via `${GITHUB_REF_NAME#v}` parameter expansion
+
+## T1-17: Security Audit
+- No exec.Command usage anywhere in operator repo — all chaos execution delegated to daemon via gRPC
+- No SQL in operator repo — platform uses PostgreSQL with migrations (parameterized, no dynamic SQL)
+- No hardcoded secrets, .env files, or PEM files committed
+- 3 HIGH findings: insecure gRPC transport in executor DefaultDaemonClientFactory, WebSocket token in URL query param, WebSocket wildcard origin
+- Dockerfiles are solid: multi-stage, distroless, non-root (65532), stripped binaries, CGO_ENABLED=0
+- TLS config in daemon/tls.go is correct: MinVersion TLS 1.2, RequireAndVerifyClientCert (mTLS)
+- Daemon supports mTLS but operator-side clients hardcode insecure.NewCredentials() — biggest gap
+- config/rbac/ is empty — RBAC manifests need to be generated and committed
+- io.ReadAll without LimitReader in probes (http.go, prometheus.go) — OOM risk
+- gitleaks config: allowlist test files, go.sum, generated code, sample configs
+- semgrep config: custom rules for insecure gRPC, hardcoded creds, command injection, SQL injection, path traversal, unbounded reads, K8s-specific patterns (wildcard origin, token in query)
+- Security CI workflow: Trivy fs scan, Semgrep SAST, Gitleaks secret detection, govulncheck

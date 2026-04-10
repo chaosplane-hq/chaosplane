@@ -1,0 +1,21 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: e2e-network-partition
+  namespace: default
+  labels:
+    test: e2e
+spec:
+  target:
+    kind: Pod
+    namespace: default
+    labelSelector:
+      matchLabels:
+        app: e2e-target
+  action:
+    type: network-partition
+    parameters:
+      direction: both
+      targetLabelSelector: app=e2e-target-peer
+      interface: eth0
+  duration: 30s

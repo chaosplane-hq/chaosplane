@@ -1,0 +1,134 @@
+rules:
+  # ── Go Security Rules ──────────────────────────────────────────
+
+  - id: go-insecure-grpc-credentials
+    patterns:
+      - pattern: grpc.WithTransportCredentials(insecure.NewCredentials())
+    message: >
+      gRPC connection uses insecure (plaintext) transport credentials.
+      Use TLS credentials in production to prevent eavesdropping and MITM attacks.
+    languages: [go]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-319: Cleartext Transmission of Sensitive Information"
+
+  - id: go-hardcoded-credentials
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $X = "..."
+          - pattern: |
+              $X := "..."
+    metavariable-regex:
+      metavariable: $X
+      regex: (?i)(password|passwd|secret|token|apikey|api_key|private_key)
+    message: >
+      Potential hardcoded credential detected. Use environment variables or
+      a secrets manager instead.
+    languages: [go]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+
+  - id: go-command-injection
+    patterns:
+      - pattern: exec.Command($CMD, ...)
+      - metavariable-pattern:
+          metavariable: $CMD
+          patterns:
+            - pattern-not: "..."
+    message: >
+      exec.Command called with a non-literal command. Ensure the command
+      string is not derived from user input to prevent command injection.
+    languages: [go]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-78: OS Command Injection"
+
+  - id: go-sql-injection
+    patterns:
+      - pattern-either:
+          - pattern: fmt.Sprintf("... SELECT ...", ...)
+          - pattern: fmt.Sprintf("... INSERT ...", ...)
+          - pattern: fmt.Sprintf("... UPDATE ...", ...)
+          - pattern: fmt.Sprintf("... DELETE ...", ...)
+    message: >
+      SQL query constructed via string formatting. Use parameterized queries
+      to prevent SQL injection.
+    languages: [go]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-89: SQL Injection"
+
+  - id: go-path-traversal
+    patterns:
+      - pattern-either:
+          - pattern: filepath.Join($BASE, $INPUT, ...)
+          - pattern: os.Open(fmt.Sprintf(...))
+      - pattern-not-inside: |
+          filepath.Clean(...)
+    message: >
+      Potential path traversal. Validate and sanitize file paths derived
+      from external input.
+    languages: [go]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-22: Path Traversal"
+
+  - id: go-unbounded-read
+    pattern: io.ReadAll($READER)
+    message: >
+      io.ReadAll reads the entire stream into memory without a size limit.
+      Consider using io.LimitReader to prevent denial-of-service via large payloads.
+    languages: [go]
+    severity: INFO
+    metadata:
+      category: security
+      cwe: "CWE-400: Uncontrolled Resource Consumption"
+
+  - id: go-tls-min-version-too-low
+    patterns:
+      - pattern-either:
+          - pattern: "tls.VersionTLS10"
+          - pattern: "tls.VersionTLS11"
+    message: >
+      TLS minimum version is below 1.2. Use tls.VersionTLS12 or tls.VersionTLS13.
+    languages: [go]
+    severity: ERROR
+    metadata:
+      category: security
+      cwe: "CWE-326: Inadequate Encryption Strength"
+
+  # ── Kubernetes Operator Patterns ────────────────────────────────
+
+  - id: k8s-wildcard-origin
+    pattern: |
+      OriginPatterns: []string{"*"}
+    message: >
+      WebSocket accepts connections from any origin. Restrict OriginPatterns
+      to trusted domains in production.
+    languages: [go]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-346: Origin Validation Error"
+
+  - id: k8s-token-in-query-param
+    patterns:
+      - pattern-either:
+          - pattern: $C.Query("token")
+          - pattern: $C.Query("api_key")
+    message: >
+      Authentication token passed as URL query parameter. Tokens in URLs
+      may be logged by proxies, browsers, and web servers. Prefer the
+      Authorization header or Sec-WebSocket-Protocol subprotocol.
+    languages: [go]
+    severity: WARNING
+    metadata:
+      category: security
+      cwe: "CWE-598: Use of GET Request Method With Sensitive Query Strings"

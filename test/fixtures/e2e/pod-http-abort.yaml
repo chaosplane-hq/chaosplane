@@ -1,0 +1,21 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: e2e-pod-http-abort
+  namespace: default
+  labels:
+    test: e2e
+spec:
+  target:
+    kind: Pod
+    namespace: default
+    labelSelector:
+      matchLabels:
+        app: e2e-target
+  action:
+    type: pod-http-abort
+    parameters:
+      port: "8080"
+      statusCode: "503"
+      percentage: "100"
+  duration: 30s

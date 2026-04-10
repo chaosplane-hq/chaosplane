@@ -1,0 +1,19 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: e2e-stress-cpu
+  namespace: default
+  labels:
+    test: e2e
+spec:
+  target:
+    kind: Node
+    labelSelector:
+      matchLabels:
+        kubernetes.io/os: linux
+  action:
+    type: stress-cpu
+    parameters:
+      cores: "2"
+      loadPercent: "90"
+  duration: 30s

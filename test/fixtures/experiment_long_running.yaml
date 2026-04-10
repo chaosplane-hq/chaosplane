@@ -1,0 +1,24 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: e2e-long-running
+  namespace: default
+  labels:
+    test: e2e
+    test-type: long-running
+spec:
+  target:
+    kind: Pod
+    namespace: default
+    labelSelector:
+      matchLabels:
+        app: e2e-target
+  action:
+    type: pod-cpu-stress
+    parameters:
+      cores: "1"
+      loadPercent: "50"
+  duration: 5m
+  rollback:
+    enabled: true
+    timeout: 120s

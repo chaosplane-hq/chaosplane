@@ -1,0 +1,18 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: e2e-stress-memory
+  namespace: default
+  labels:
+    test: e2e
+spec:
+  target:
+    kind: Node
+    labelSelector:
+      matchLabels:
+        kubernetes.io/os: linux
+  action:
+    type: stress-memory
+    parameters:
+      memoryMB: "256"
+  duration: 30s

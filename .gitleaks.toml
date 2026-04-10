@@ -1,0 +1,44 @@
+title = "ChaosPlane Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allowlist"
+paths = [
+    '''go\.sum$''',
+    '''go\.mod$''',
+    '''vendor/''',
+    '''\.git/''',
+    '''test/''',
+    '''_test\.go$''',
+    '''config/samples/''',
+    '''gen/''',
+    '''\.pb\.go$''',
+    '''pnpm-lock\.yaml$''',
+    '''package-lock\.json$''',
+]
+
+# Allow test fixtures and sample configs that contain placeholder values
+regexTarget = "line"
+regexes = [
+    '''(?i)(example|placeholder|changeme|REDACTED|xxx|test-key|fake)''',
+]
+
+[[rules]]
+id = "chaosplane-api-key"
+description = "ChaosPlane API Key"
+regex = '''(?i)chaosplane[_-]?(api[_-]?key|secret|token)\s*[:=]\s*['"][a-zA-Z0-9+/=]{20,}['"]'''
+tags = ["key", "chaosplane"]
+
+[[rules]]
+id = "kubernetes-service-account-token"
+description = "Kubernetes Service Account Token"
+regex = '''eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+'''
+tags = ["key", "kubernetes"]
+
+[[rules]]
+id = "tls-private-key-inline"
+description = "Inline TLS Private Key"
+regex = '''-----BEGIN (RSA |EC )?PRIVATE KEY-----'''
+tags = ["key", "tls"]

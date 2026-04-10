@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: chaos.chaosplane.io/v1alpha1
+    kind: ChaosExperiment
+    metadata:
+      name: concurrent-pod-kill
+      namespace: default
+      labels:
+        test: concurrent
+    spec:
+      target:
+        kind: Pod
+        namespace: default
+        labelSelector:
+          matchLabels:
+            app: e2e-target
+      action:
+        type: pod-kill
+        parameters:
+          gracePeriodSeconds: "0"
+      duration: 30s
+  - apiVersion: chaos.chaosplane.io/v1alpha1
+    kind: ChaosExperiment
+    metadata:
+      name: concurrent-network-delay
+      namespace: default
+      labels:
+        test: concurrent
+    spec:
+      target:
+        kind: Pod
+        namespace: default
+        labelSelector:
+          matchLabels:
+            app: e2e-target
+      action:
+        type: network-delay
+        parameters:
+          latencyMs: "100"
+          interface: eth0
+      duration: 30s
+  - apiVersion: chaos.chaosplane.io/v1alpha1
+    kind: ChaosExperiment
+    metadata:
+      name: concurrent-pod-cpu-stress
+      namespace: default
+      labels:
+        test: concurrent
+    spec:
+      target:
+        kind: Pod
+        namespace: default
+        labelSelector:
+          matchLabels:
+            app: e2e-target
+      action:
+        type: pod-cpu-stress
+        parameters:
+          cores: "1"
+          loadPercent: "50"
+      duration: 30s
