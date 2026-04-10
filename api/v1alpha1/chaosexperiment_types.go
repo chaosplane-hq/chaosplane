@@ -56,15 +56,16 @@ type ExecutionSpec struct {
 	Parallelism *int32 `json:"parallelism,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Pending;Running;Completed;Failed;Aborted
+// +kubebuilder:validation:Enum=Pending;Running;Completing;Completed;Failed;Aborted
 type ExperimentPhase string
 
 const (
-	PhasePending   ExperimentPhase = "Pending"
-	PhaseRunning   ExperimentPhase = "Running"
-	PhaseCompleted ExperimentPhase = "Completed"
-	PhaseFailed    ExperimentPhase = "Failed"
-	PhaseAborted   ExperimentPhase = "Aborted"
+	PhasePending    ExperimentPhase = "Pending"
+	PhaseRunning    ExperimentPhase = "Running"
+	PhaseCompleting ExperimentPhase = "Completing"
+	PhaseCompleted  ExperimentPhase = "Completed"
+	PhaseFailed     ExperimentPhase = "Failed"
+	PhaseAborted    ExperimentPhase = "Aborted"
 )
 
 type ChaosExperimentStatus struct {
@@ -73,6 +74,8 @@ type ChaosExperimentStatus struct {
 	EndTime            *metav1.Time       `json:"endTime,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
+	AffectedResources  []string           `json:"affectedResources,omitempty"`
+	Message            string             `json:"message,omitempty"`
 }
 
 func init() {

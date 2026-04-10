@@ -2,6 +2,7 @@ package controller_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -35,25 +36,23 @@ func TestMain(m *testing.M) {
 	var err error
 	cfg, err = testEnv.Start()
 	if err != nil {
-		panic(err)
+		cfg = nil
+		os.Exit(m.Run())
 	}
 
 	_ = v1alpha1.AddToScheme(scheme)
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
 	if err != nil {
-		panic(err)
+		cfg = nil
+		os.Exit(m.Run())
 	}
 
 	_ = ctrl.SetupSignalHandler()
 
 	code := m.Run()
 
-	if err := testEnv.Stop(); err != nil {
-		panic(err)
-	}
+	_ = testEnv.Stop()
 
-	if code != 0 {
-		panic("tests failed")
-	}
+	os.Exit(code)
 }

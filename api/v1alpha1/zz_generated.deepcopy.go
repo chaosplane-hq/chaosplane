@@ -132,6 +132,11 @@ func (in *ChaosExperimentStatus) DeepCopyInto(out *ChaosExperimentStatus) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.AffectedResources != nil {
+		in, out := &in.AffectedResources, &out.AffectedResources
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 }
 
 func (in *BlastRadiusPolicy) DeepCopyObject() runtime.Object {

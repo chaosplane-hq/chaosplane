@@ -1,0 +1,15 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: pod-kill-test
+spec:
+  target:
+    kind: Pod
+    namespace: default
+    labelSelector:
+      matchLabels:
+        app: test-target
+  action:
+    type: pod-kill
+    parameters: {}
+  duration: 30s

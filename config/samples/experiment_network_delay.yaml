@@ -1,0 +1,17 @@
+apiVersion: chaos.chaosplane.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: network-delay-test
+spec:
+  target:
+    kind: Pod
+    namespace: default
+    labelSelector:
+      matchLabels:
+        app: test-target
+  action:
+    type: network-delay
+    parameters:
+      latency: "100ms"
+      jitter: "10ms"
+  duration: 60s

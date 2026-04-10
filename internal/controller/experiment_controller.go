@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -16,7 +17,10 @@ import (
 	"github.com/chaosplane-hq/chaosplane/internal/executor"
 )
 
-const finalizerName = "chaosplane.io/experiment-protection"
+const (
+	finalizerName   = "chaosplane.io/experiment-protection"
+	abortAnnotation = "chaosplane.io/abort"
+)
 
 type ExperimentReconciler struct {
 	client.Client
@@ -51,6 +55,8 @@ func (r *ExperimentReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return r.reconcilePending(ctx, &exp, log)
 	case v1alpha1.PhaseRunning:
 		return r.reconcileRunning(ctx, &exp, log)
+	case v1alpha1.PhaseCompleting:
+		return r.reconcileCompleting(ctx, &exp, log)
 	case v1alpha1.PhaseCompleted, v1alpha1.PhaseFailed, v1alpha1.PhaseAborted:
 		return ctrl.Result{}, nil
 	default:
@@ -60,8 +66,6 @@ func (r *ExperimentReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 }
 
 func (r *ExperimentReconciler) reconcilePending(ctx context.Context, exp *v1alpha1.ChaosExperiment, log *slog.Logger) (ctrl.Result, error) {
-	log.Info("transitioning to Running")
-
 	exec, err := r.Registry.Get(exp.Spec.Action.Type)
 	if err != nil {
 		return r.setFailed(ctx, exp, fmt.Sprintf("no executor for action %q", exp.Spec.Action.Type))
@@ -76,31 +80,103 @@ func (r *ExperimentReconciler) reconcilePending(ctx context.Context, exp *v1alph
 	exp.Status.StartTime = &now
 	exp.Status.ObservedGeneration = exp.Generation
 	setCondition(exp, "Progressing", metav1.ConditionTrue, "ExperimentStarted", "Experiment is running")
+	setCondition(exp, "Available", metav1.ConditionFalse, "ExperimentStarted", "Experiment is running")
+	setCondition(exp, "Degraded", metav1.ConditionFalse, "ExperimentStarted", "Experiment is running")
 
 	if err := r.Status().Update(ctx, exp); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	r.Recorder.Event(exp, "Normal", "Started", "Experiment started")
+	log.Info("transitioning to Running")
 	return ctrl.Result{Requeue: true}, nil
 }
 
 func (r *ExperimentReconciler) reconcileRunning(ctx context.Context, exp *v1alpha1.ChaosExperiment, log *slog.Logger) (ctrl.Result, error) {
+	if exp.Annotations[abortAnnotation] == "true" {
+		log.Info("abort annotation detected, rolling back")
+		return r.handleAbort(ctx, exp, log)
+	}
+
+	if exp.Status.StartTime == nil {
+		return r.setFailed(ctx, exp, "running experiment has no startTime")
+	}
+
+	elapsed := time.Since(exp.Status.StartTime.Time)
+	duration := exp.Spec.Duration.Duration
+	timeout := duration * 2
+
+	if elapsed >= timeout {
+		log.Warn("experiment timed out", "elapsed", elapsed, "timeout", timeout)
+		r.Recorder.Event(exp, "Warning", "Timeout", "Experiment timed out, forcing rollback")
+		return r.transitionToCompleting(ctx, exp, log)
+	}
+
+	if elapsed >= duration {
+		log.Info("duration elapsed, transitioning to Completing")
+		return r.transitionToCompleting(ctx, exp, log)
+	}
+
 	exec, err := r.Registry.Get(exp.Spec.Action.Type)
 	if err != nil {
 		return r.setFailed(ctx, exp, fmt.Sprintf("executor lost: %v", err))
 	}
 
+	r.Recorder.Event(exp, "Normal", "Executing", "Executing chaos action")
 	if err := exec.Execute(ctx, exp); err != nil {
 		log.Error("execute failed, attempting rollback", "error", err)
-		_ = exec.Rollback(ctx, exp)
+		r.Recorder.Event(exp, "Warning", "ExecuteFailed", fmt.Sprintf("Execution failed: %v", err))
+		rbErr := exec.Rollback(ctx, exp)
+		if rbErr != nil {
+			r.Recorder.Event(exp, "Warning", "RollbackFailed", fmt.Sprintf("Rollback also failed: %v", rbErr))
+			return r.setFailed(ctx, exp, fmt.Sprintf("execution failed: %v; rollback also failed: %v", err, rbErr))
+		}
 		return r.setFailed(ctx, exp, fmt.Sprintf("execution failed: %v", err))
 	}
 
-	if exp.Spec.Rollback != nil && exp.Spec.Rollback.Enabled {
-		if err := exec.Rollback(ctx, exp); err != nil {
-			return r.setFailed(ctx, exp, fmt.Sprintf("rollback failed: %v", err))
-		}
+	remaining := duration - elapsed
+	return ctrl.Result{RequeueAfter: remaining}, nil
+}
+
+func (r *ExperimentReconciler) handleAbort(ctx context.Context, exp *v1alpha1.ChaosExperiment, log *slog.Logger) (ctrl.Result, error) {
+	exec, err := r.Registry.Get(exp.Spec.Action.Type)
+	if err != nil {
+		return r.setFailed(ctx, exp, fmt.Sprintf("abort: executor lost: %v", err))
+	}
+
+	r.Recorder.Event(exp, "Normal", "RollingBack", "Rolling back due to abort")
+	if rbErr := exec.Rollback(ctx, exp); rbErr != nil {
+		log.Error("rollback during abort failed", "error", rbErr)
+		r.Recorder.Event(exp, "Warning", "RollbackFailed", fmt.Sprintf("Rollback failed during abort: %v", rbErr))
+		return r.setFailed(ctx, exp, fmt.Sprintf("abort rollback failed: %v", rbErr))
+	}
+
+	return r.setAborted(ctx, exp)
+}
+
+func (r *ExperimentReconciler) transitionToCompleting(ctx context.Context, exp *v1alpha1.ChaosExperiment, log *slog.Logger) (ctrl.Result, error) {
+	exp.Status.Phase = v1alpha1.PhaseCompleting
+	setCondition(exp, "Progressing", metav1.ConditionTrue, "ExperimentCompleting", "Experiment is rolling back")
+
+	if err := r.Status().Update(ctx, exp); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	log.Info("transitioning to Completing")
+	return ctrl.Result{Requeue: true}, nil
+}
+
+func (r *ExperimentReconciler) reconcileCompleting(ctx context.Context, exp *v1alpha1.ChaosExperiment, log *slog.Logger) (ctrl.Result, error) {
+	exec, err := r.Registry.Get(exp.Spec.Action.Type)
+	if err != nil {
+		return r.setFailed(ctx, exp, fmt.Sprintf("completing: executor lost: %v", err))
+	}
+
+	r.Recorder.Event(exp, "Normal", "RollingBack", "Rolling back chaos action")
+	if rbErr := exec.Rollback(ctx, exp); rbErr != nil {
+		log.Error("rollback failed", "error", rbErr)
+		r.Recorder.Event(exp, "Warning", "RollbackFailed", fmt.Sprintf("Rollback failed: %v", rbErr))
+		return r.setFailed(ctx, exp, fmt.Sprintf("rollback failed: %v", rbErr))
 	}
 
 	return r.setCompleted(ctx, exp)
@@ -111,12 +187,15 @@ func (r *ExperimentReconciler) handleDeletion(ctx context.Context, exp *v1alpha1
 		return ctrl.Result{}, nil
 	}
 
-	log.Info("handling deletion, running rollback")
-
-	if exp.Status.Phase == v1alpha1.PhaseRunning {
+	if exp.Status.Phase == v1alpha1.PhaseRunning || exp.Status.Phase == v1alpha1.PhaseCompleting {
+		log.Info("handling deletion, running rollback")
 		if exec, err := r.Registry.Get(exp.Spec.Action.Type); err == nil {
+			r.Recorder.Event(exp, "Normal", "RollingBack", "Rolling back due to deletion")
 			if rbErr := exec.Rollback(ctx, exp); rbErr != nil {
 				log.Error("rollback during deletion failed", "error", rbErr)
+				r.Recorder.Event(exp, "Warning", "RollbackFailed", fmt.Sprintf("Rollback during deletion failed: %v", rbErr))
+			} else {
+				r.Recorder.Event(exp, "Normal", "Completed", "Rollback completed during deletion")
 			}
 		}
 	}
@@ -132,7 +211,10 @@ func (r *ExperimentReconciler) setFailed(ctx context.Context, exp *v1alpha1.Chao
 	now := metav1.Now()
 	exp.Status.Phase = v1alpha1.PhaseFailed
 	exp.Status.EndTime = &now
+	exp.Status.Message = reason
 	setCondition(exp, "Progressing", metav1.ConditionFalse, "ExperimentFailed", reason)
+	setCondition(exp, "Available", metav1.ConditionFalse, "ExperimentFailed", reason)
+	setCondition(exp, "Degraded", metav1.ConditionTrue, "ExperimentFailed", reason)
 
 	if err := r.Status().Update(ctx, exp); err != nil {
 		return ctrl.Result{}, err
@@ -146,11 +228,28 @@ func (r *ExperimentReconciler) setCompleted(ctx context.Context, exp *v1alpha1.C
 	exp.Status.Phase = v1alpha1.PhaseCompleted
 	exp.Status.EndTime = &now
 	setCondition(exp, "Progressing", metav1.ConditionFalse, "ExperimentCompleted", "Experiment completed successfully")
+	setCondition(exp, "Available", metav1.ConditionTrue, "ExperimentCompleted", "Experiment completed successfully")
+	setCondition(exp, "Degraded", metav1.ConditionFalse, "ExperimentCompleted", "Experiment completed successfully")
 
 	if err := r.Status().Update(ctx, exp); err != nil {
 		return ctrl.Result{}, err
 	}
 	r.Recorder.Event(exp, "Normal", "Completed", "Experiment completed successfully")
+	return ctrl.Result{}, nil
+}
+
+func (r *ExperimentReconciler) setAborted(ctx context.Context, exp *v1alpha1.ChaosExperiment) (ctrl.Result, error) {
+	now := metav1.Now()
+	exp.Status.Phase = v1alpha1.PhaseAborted
+	exp.Status.EndTime = &now
+	setCondition(exp, "Progressing", metav1.ConditionFalse, "ExperimentAborted", "Experiment was aborted")
+	setCondition(exp, "Available", metav1.ConditionFalse, "ExperimentAborted", "Experiment was aborted")
+	setCondition(exp, "Degraded", metav1.ConditionFalse, "ExperimentAborted", "Experiment was aborted")
+
+	if err := r.Status().Update(ctx, exp); err != nil {
+		return ctrl.Result{}, err
+	}
+	r.Recorder.Event(exp, "Warning", "Aborted", "Experiment was aborted")
 	return ctrl.Result{}, nil
 }
 
