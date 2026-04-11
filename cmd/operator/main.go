@@ -15,6 +15,8 @@ import (
 	"github.com/chaosplane-hq/chaosplane/internal/controller"
 	"github.com/chaosplane-hq/chaosplane/internal/executor"
 	awsexec "github.com/chaosplane-hq/chaosplane/internal/executor/aws"
+	azureexec "github.com/chaosplane-hq/chaosplane/internal/executor/azure"
+	gcpexec "github.com/chaosplane-hq/chaosplane/internal/executor/gcp"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/network"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/node"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/pod"
@@ -95,6 +97,14 @@ func main() {
 	registry.MustRegister("vm-network-delay", vmexec.NewNetworkDelayExecutor(logger))
 	registry.MustRegister("vm-process-kill", vmexec.NewProcessKillExecutor(logger))
 	registry.MustRegister("vm-process-suspend", vmexec.NewProcessSuspendExecutor(logger))
+
+	registry.MustRegister("azure-vm-stop", azureexec.NewVMStopExecutor(logger))
+	registry.MustRegister("azure-aks-scale", azureexec.NewAKSNodePoolScaleExecutor(logger))
+	registry.MustRegister("azure-cosmosdb-failover", azureexec.NewCosmosDBFailoverExecutor(logger))
+
+	registry.MustRegister("gcp-gke-scale", gcpexec.NewGKENodePoolScaleExecutor(logger))
+	registry.MustRegister("gcp-cloudsql-failover", gcpexec.NewCloudSQLFailoverExecutor(logger))
+	registry.MustRegister("gcp-cloudrun-stop", gcpexec.NewCloudRunStopExecutor(logger))
 
 	reconciler := &controller.ExperimentReconciler{
 		Client:   mgr.GetClient(),
