@@ -19,6 +19,7 @@ import (
 	"github.com/chaosplane-hq/chaosplane/internal/executor/node"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/pod"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/stress"
+	vmexec "github.com/chaosplane-hq/chaosplane/internal/executor/vm"
 	"github.com/chaosplane-hq/chaosplane/internal/webhook"
 )
 
@@ -87,6 +88,13 @@ func main() {
 	registry.MustRegister("aws-rds-failover", awsexec.NewRDSFailoverExecutor(logger))
 	registry.MustRegister("aws-ecs-stop-task", awsexec.NewECSStopTaskExecutor(logger))
 	registry.MustRegister("aws-az-failure", awsexec.NewAZFailureExecutor(logger))
+
+	registry.MustRegister("vm-cpu-stress", vmexec.NewCPUStressExecutor(logger))
+	registry.MustRegister("vm-memory-stress", vmexec.NewMemoryStressExecutor(logger))
+	registry.MustRegister("vm-disk-stress", vmexec.NewDiskStressExecutor(logger))
+	registry.MustRegister("vm-network-delay", vmexec.NewNetworkDelayExecutor(logger))
+	registry.MustRegister("vm-process-kill", vmexec.NewProcessKillExecutor(logger))
+	registry.MustRegister("vm-process-suspend", vmexec.NewProcessSuspendExecutor(logger))
 
 	reconciler := &controller.ExperimentReconciler{
 		Client:   mgr.GetClient(),

@@ -611,6 +611,24 @@ func (in *ChaosAgentSpec) DeepCopyInto(out *ChaosAgentSpec) {
 		*out = new(AgentTLSSpec)
 		**out = **in
 	}
+	if in.VMTargets != nil {
+		in, out := &in.VMTargets, &out.VMTargets
+		*out = make([]VMTarget, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+}
+
+func (in *VMTarget) DeepCopyInto(out *VMTarget) {
+	*out = *in
+	if in.Labels != nil {
+		in, out := &in.Labels, &out.Labels
+		*out = make(map[string]string, len(*in))
+		for k, v := range *in {
+			(*out)[k] = v
+		}
+	}
 }
 
 func (in *ChaosAgentStatus) DeepCopyInto(out *ChaosAgentStatus) {

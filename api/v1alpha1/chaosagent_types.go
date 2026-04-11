@@ -31,6 +31,25 @@ type ChaosAgentSpec struct {
 	TokenSecretRef    SecretKeyRef        `json:"tokenSecretRef"`
 	HeartbeatInterval metav1.Duration     `json:"heartbeatInterval,omitempty"`
 	TLS               *AgentTLSSpec       `json:"tls,omitempty"`
+	TargetType        AgentTargetType     `json:"targetType,omitempty"`
+	VMTargets         []VMTarget          `json:"vmTargets,omitempty"`
+}
+
+// +kubebuilder:validation:Enum=kubernetes;vm;hybrid
+type AgentTargetType string
+
+const (
+	AgentTargetKubernetes AgentTargetType = "kubernetes"
+	AgentTargetVM         AgentTargetType = "vm"
+	AgentTargetHybrid     AgentTargetType = "hybrid"
+)
+
+type VMTarget struct {
+	Host      string            `json:"host"`
+	Port      int               `json:"port,omitempty"`
+	User      string            `json:"user,omitempty"`
+	KeySecret string            `json:"keySecret,omitempty"`
+	Labels    map[string]string `json:"labels,omitempty"`
 }
 
 type AgentEnvironmentRef struct {
