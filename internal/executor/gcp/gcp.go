@@ -42,7 +42,14 @@ func (e *GKENodePoolScaleExecutor) Execute(ctx context.Context, exp *v1alpha1.Ch
 	if err != nil {
 		return err
 	}
-	e.Logger.Info("gcp-gke-scale: scaling node pool", "cluster", params["clusterName"], "pool", params["nodePool"], "target", params["targetSize"])
+	client := NewGCPClient(params)
+	size := 0
+	fmt.Sscanf(params["targetSize"], "%d", &size)
+
+	if err := client.GKESetNodePoolSize(ctx, params["zone"], params["clusterName"], params["nodePool"], size); err != nil {
+		return fmt.Errorf("gcp-gke-scale: %w", err)
+	}
+	e.Logger.Info("gcp-gke-scale: scaled node pool", "cluster", params["clusterName"], "pool", params["nodePool"], "target", size)
 	return nil
 }
 
@@ -70,7 +77,12 @@ func (e *CloudSQLFailoverExecutor) Execute(ctx context.Context, exp *v1alpha1.Ch
 	if err != nil {
 		return err
 	}
-	e.Logger.Info("gcp-cloudsql-failover: triggering failover", "project", params["projectId"], "instance", params["instanceName"])
+	client := NewGCPClient(params)
+
+	if err := client.CloudSQLFailover(ctx, params["instanceName"]); err != nil {
+		return fmt.Errorf("gcp-cloudsql-failover: %w", err)
+	}
+	e.Logger.Info("gcp-cloudsql-failover: triggered failover", "project", params["projectId"], "instance", params["instanceName"])
 	return nil
 }
 
@@ -98,7 +110,12 @@ func (e *CloudRunStopExecutor) Execute(ctx context.Context, exp *v1alpha1.ChaosE
 	if err != nil {
 		return err
 	}
-	e.Logger.Info("gcp-cloudrun-stop: scaling to zero", "project", params["projectId"], "service", params["serviceName"], "region", params["region"])
+	client := NewGCPClient(params)
+
+	if err := client.CloudRunUpdateTraffic(ctx, params["region"], params["serviceName"], 0); err != nil {
+		return fmt.Errorf("gcp-cloudrun-stop: %w", err)
+	}
+	e.Logger.Info("gcp-cloudrun-stop: scaled to zero", "project", params["projectId"], "service", params["serviceName"], "region", params["region"])
 	return nil
 }
 

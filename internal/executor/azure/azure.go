@@ -46,15 +46,31 @@ func (e *VMStopExecutor) Execute(ctx context.Context, exp *v1alpha1.ChaosExperim
 	if err != nil {
 		return err
 	}
-	e.state[string(exp.UID)] = []string{params["vmName"]}
-	e.Logger.Info("azure-vm-stop: deallocating VM", "subscription", params["subscriptionId"], "rg", params["resourceGroup"], "vm", params["vmName"])
+	client := NewAzureClient(params)
+	vmName := params["vmName"]
+
+	if err := client.VMDeallocate(ctx, vmName); err != nil {
+		return fmt.Errorf("azure-vm-stop: %w", err)
+	}
+	e.state[string(exp.UID)] = []string{vmName}
+	e.Logger.Info("azure-vm-stop: deallocated VM", "subscription", params["subscriptionId"], "rg", params["resourceGroup"], "vm", vmName)
 	return nil
 }
 
 func (e *VMStopExecutor) Rollback(ctx context.Context, exp *v1alpha1.ChaosExperiment) error {
 	vms := e.state[string(exp.UID)]
 	delete(e.state, string(exp.UID))
-	e.Logger.Info("azure-vm-stop: starting VMs back", "vms", vms)
+	if len(vms) == 0 {
+		return nil
+	}
+	params, _ := pod.ParseParameters(exp)
+	client := NewAzureClient(params)
+	for _, vm := range vms {
+		if err := client.VMStart(ctx, vm); err != nil {
+			return fmt.Errorf("azure-vm-stop rollback %s: %w", vm, err)
+		}
+	}
+	e.Logger.Info("azure-vm-stop: started VMs back", "vms", vms)
 	return nil
 }
 
@@ -78,7 +94,14 @@ func (e *AKSNodePoolScaleExecutor) Execute(ctx context.Context, exp *v1alpha1.Ch
 	if err != nil {
 		return err
 	}
-	e.Logger.Info("azure-aks-scale: scaling node pool", "cluster", params["clusterName"], "pool", params["nodePool"], "target", params["targetCount"])
+	client := NewAzureClient(params)
+	count := 0
+	fmt.Sscanf(params["targetCount"], "%d", &count)
+
+	if err := client.AKSScaleNodePool(ctx, params["clusterName"], params["nodePool"], count); err != nil {
+		return fmt.Errorf("azure-aks-scale: %w", err)
+	}
+	e.Logger.Info("azure-aks-scale: scaled node pool", "cluster", params["clusterName"], "pool", params["nodePool"], "target", count)
 	return nil
 }
 
@@ -106,7 +129,12 @@ func (e *CosmosDBFailoverExecutor) Execute(ctx context.Context, exp *v1alpha1.Ch
 	if err != nil {
 		return err
 	}
-	e.Logger.Info("azure-cosmosdb-failover: triggering failover", "account", params["accountName"], "targetRegion", params["targetRegion"])
+	client := NewAzureClient(params)
+
+	if err := client.CosmosDBFailover(ctx, params["accountName"], params["targetRegion"]); err != nil {
+		return fmt.Errorf("azure-cosmosdb-failover: %w", err)
+	}
+	e.Logger.Info("azure-cosmosdb-failover: triggered failover", "account", params["accountName"], "targetRegion", params["targetRegion"])
 	return nil
 }
 
