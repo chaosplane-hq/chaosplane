@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	finalizerName   = "chaosplane.io/experiment-protection"
-	abortAnnotation = "chaosplane.io/abort"
+	finalizerName   = "chaosplane.dev/experiment-protection"
+	abortAnnotation = "chaosplane.dev/abort"
 )
 
 type ExperimentReconciler struct {

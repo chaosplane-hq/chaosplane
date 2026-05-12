@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: List
 items:
-  - apiVersion: chaos.chaosplane.io/v1alpha1
+  - apiVersion: chaos.chaosplane.dev/v1alpha1
     kind: ChaosExperiment
     metadata:
       name: concurrent-pod-kill
@@ -20,7 +20,7 @@ items:
         parameters:
           gracePeriodSeconds: "0"
       duration: 30s
-  - apiVersion: chaos.chaosplane.io/v1alpha1
+  - apiVersion: chaos.chaosplane.dev/v1alpha1
     kind: ChaosExperiment
     metadata:
       name: concurrent-network-delay
@@ -40,7 +40,7 @@ items:
           latencyMs: "100"
           interface: eth0
       duration: 30s
-  - apiVersion: chaos.chaosplane.io/v1alpha1
+  - apiVersion: chaos.chaosplane.dev/v1alpha1
     kind: ChaosExperiment
     metadata:
       name: concurrent-pod-cpu-stress

@@ -18,7 +18,7 @@ The v2.0.0 architecture is a significant evolution from v0.1.0. The core operato
 ChaosPlane now manages chaos experiments across multiple Kubernetes clusters from a single control plane. The federation controller synchronizes experiment state across clusters and provides a unified view of resilience across your entire fleet.
 
 ```yaml
-apiVersion: chaos.chaosplane.io/v2
+apiVersion: chaos.chaosplane.dev/v2
 kind: FederatedChaosExperiment
 metadata:
   name: cross-cluster-network-partition
@@ -84,7 +84,7 @@ API v2 is a clean redesign that addresses inconsistencies in v1 while maintainin
 | `POST /api/v1/workflows` | `POST /api/v2/workflows` | DAG spec format updated |
 | `GET /api/v1/metrics` | `GET /api/v2/resilience/score` | Renamed for clarity |
 
-v1 API remains available at `/api/v1/` and is supported until v3.0.0 or 12 months after v2.0.0 GA. A migration guide is available at https://docs.chaosplane.io/migration/v1-to-v2.
+v1 API remains available at `/api/v1/` and is supported until v3.0.0 or 12 months after v2.0.0 GA. A migration guide is available at https://docs.chaosplane.dev/migration/v1-to-v2.
 
 ### New v2 API Features
 
@@ -387,7 +387,7 @@ Multi-region, compliance completions, AWS Marketplace, CNCF Incubation.
 2. Update the Helm chart: `helm upgrade chaosplane chaosplane/chaosplane --version 2.0.0 -f values.yaml`
 3. The operator will automatically migrate CRDs from v1alpha1 to v2alpha1
 4. Update API clients from `/api/v1/` to `/api/v2/` (v1 remains available during transition)
-5. Review breaking changes in the API v2 migration guide: https://docs.chaosplane.io/migration/v1-to-v2
+5. Review breaking changes in the API v2 migration guide: https://docs.chaosplane.dev/migration/v1-to-v2
 6. Update `chaosctl` to v2.0.0: `brew upgrade chaosctl` or download from GitHub Releases
 
 ### From v0.1.0 to v2.0.0
@@ -412,8 +412,8 @@ v2.0.0 was built by the ChaosPlane team and community contributors across 36 mon
 
 ## Links
 
-- Documentation: https://docs.chaosplane.io
-- Migration guide (v1 → v2): https://docs.chaosplane.io/migration/v1-to-v2
+- Documentation: https://docs.chaosplane.dev
+- Migration guide (v1 → v2): https://docs.chaosplane.dev/migration/v1-to-v2
 - GitHub: https://github.com/chaosplane-hq/chaosplane
 - Changelog: CHANGELOG.md
 - Security: SECURITY.md

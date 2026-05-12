@@ -1,4 +1,0 @@
-FROM gcr.io/distroless/static-debian12:nonroot
-COPY chaosplane-daemon /app/chaosplane-daemon
-USER 65532:65532
-ENTRYPOINT ["/app/chaosplane-daemon"]

@@ -24,7 +24,7 @@ func newScheme() *runtime.Scheme {
 
 func makeExperiment(ns, kind, actionType string, names []string, duration time.Duration, labelSelector *metav1.LabelSelector) v1alpha1.ChaosExperiment {
 	exp := v1alpha1.ChaosExperiment{
-		TypeMeta: metav1.TypeMeta{APIVersion: "chaos.chaosplane.io/v1alpha1", Kind: "ChaosExperiment"},
+		TypeMeta: metav1.TypeMeta{APIVersion: "chaos.chaosplane.dev/v1alpha1", Kind: "ChaosExperiment"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-experiment",
 			Namespace: ns,
@@ -53,7 +53,7 @@ func makeRequest(exp v1alpha1.ChaosExperiment) admission.Request {
 			UID:       "test-uid",
 			Operation: admissionv1.Create,
 			Object:    runtime.RawExtension{Raw: raw},
-			Resource:  metav1.GroupVersionResource{Group: "chaos.chaosplane.io", Version: "v1alpha1", Resource: "chaosexperiments"},
+			Resource:  metav1.GroupVersionResource{Group: "chaos.chaosplane.dev", Version: "v1alpha1", Resource: "chaosexperiments"},
 		},
 	}
 }
@@ -259,8 +259,8 @@ func TestBlastRadiusWebhook_AuditMode(t *testing.T) {
 	if resp.AuditAnnotations == nil {
 		t.Fatal("expected audit annotations")
 	}
-	if _, ok := resp.AuditAnnotations["chaosplane.io/audit-warnings"]; !ok {
-		t.Fatal("expected chaosplane.io/audit-warnings annotation")
+	if _, ok := resp.AuditAnnotations["chaosplane.dev/audit-warnings"]; !ok {
+		t.Fatal("expected chaosplane.dev/audit-warnings annotation")
 	}
 }
 

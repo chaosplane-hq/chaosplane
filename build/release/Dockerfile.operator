@@ -1,4 +1,0 @@
-FROM gcr.io/distroless/static-debian12:nonroot
-COPY chaosplane-operator /app/chaosplane-operator
-USER 65532:65532
-ENTRYPOINT ["/app/chaosplane-operator"]

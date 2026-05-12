@@ -1,4 +1,4 @@
-apiVersion: chaos.chaosplane.io/v1alpha1
+apiVersion: chaos.chaosplane.dev/v1alpha1
 kind: ChaosExperiment
 metadata:
   name: e2e-pod-io-stress

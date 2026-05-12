@@ -3,9 +3,9 @@ kind: ValidatingWebhookConfiguration
 metadata:
   name: chaosplane-validating-webhook
 webhooks:
-  - name: validate.chaosexperiment.chaosplane.io
+  - name: validate.chaosexperiment.chaosplane.dev
     rules:
-      - apiGroups: ["chaos.chaosplane.io"]
+      - apiGroups: ["chaos.chaosplane.dev"]
         apiVersions: ["v1alpha1"]
         resources: ["chaosexperiments"]
         operations: ["CREATE", "UPDATE"]

@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <a href="https://docs.chaosplane.io">Documentation</a> · <a href="#quick-start">Quick Start</a> · <a href="https://github.com/chaosplane-hq/chaosplane/issues">Issues</a> · <a href="https://discord.gg/chaosplane">Discord</a>
+  <a href="https://docs.chaosplane.dev">Documentation</a> · <a href="#quick-start">Quick Start</a> · <a href="https://github.com/chaosplane-hq/chaosplane/issues">Issues</a> · <a href="https://discord.gg/chaosplane">Discord</a>
 </p>
 
 ---
@@ -78,7 +78,7 @@ helm install chaosplane oci://ghcr.io/chaosplane-hq/helm-charts/chaosplane \
 Create a pod-kill experiment targeting pods with the label `app: my-app`:
 
 ```yaml
-apiVersion: chaos.chaosplane.io/v1alpha1
+apiVersion: chaos.chaosplane.dev/v1alpha1
 kind: ChaosExperiment
 metadata:
   name: pod-kill-test
@@ -174,14 +174,14 @@ See [`config/samples/`](config/samples/) for ready-to-use examples:
 
 ## Documentation
 
-Full documentation is available at [docs.chaosplane.io](https://docs.chaosplane.io), including:
+Full documentation is available at [docs.chaosplane.dev](https://docs.chaosplane.dev), including:
 
-- [Getting Started Guide](https://docs.chaosplane.io/docs/getting-started)
-- [Action Reference](https://docs.chaosplane.io/docs/actions)
-- [Workflow Guide](https://docs.chaosplane.io/docs/workflows)
-- [Policy Configuration](https://docs.chaosplane.io/docs/policies)
-- [CLI Reference](https://docs.chaosplane.io/docs/cli)
-- [API Reference](https://docs.chaosplane.io/docs/api)
+- [Getting Started Guide](https://docs.chaosplane.dev/docs/getting-started)
+- [Action Reference](https://docs.chaosplane.dev/docs/actions)
+- [Workflow Guide](https://docs.chaosplane.dev/docs/workflows)
+- [Policy Configuration](https://docs.chaosplane.dev/docs/policies)
+- [CLI Reference](https://docs.chaosplane.dev/docs/cli)
+- [API Reference](https://docs.chaosplane.dev/docs/api)
 
 ## Development
 

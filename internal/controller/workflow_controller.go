@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	workflowFinalizerName = "chaosplane.io/workflow-protection"
-	workflowAbortAnnotation = "chaosplane.io/abort"
-	workflowResumeAnnotation = "chaosplane.io/resume"
+	workflowFinalizerName = "chaosplane.dev/workflow-protection"
+	workflowAbortAnnotation = "chaosplane.dev/abort"
+	workflowResumeAnnotation = "chaosplane.dev/resume"
 	maxRetries = 3
 )
 

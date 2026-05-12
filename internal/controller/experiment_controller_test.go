@@ -128,7 +128,7 @@ func TestReconcilePendingToRunning(t *testing.T) {
 	}
 	hasFinalizer := false
 	for _, f := range updated.Finalizers {
-		if f == "chaosplane.io/experiment-protection" {
+		if f == "chaosplane.dev/experiment-protection" {
 			hasFinalizer = true
 		}
 	}
@@ -246,7 +246,7 @@ func TestReconcileAbort(t *testing.T) {
 	if updated.Annotations == nil {
 		updated.Annotations = make(map[string]string)
 	}
-	updated.Annotations["chaosplane.io/abort"] = "true"
+	updated.Annotations["chaosplane.dev/abort"] = "true"
 	if err := k8sClient.Update(ctx, updated); err != nil {
 		t.Fatalf("update abort annotation: %v", err)
 	}

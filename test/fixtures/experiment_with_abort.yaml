@@ -1,4 +1,4 @@
-apiVersion: chaosplane.io/v1alpha1
+apiVersion: chaosplane.dev/v1alpha1
 kind: ChaosExperiment
 metadata:
   name: experiment-with-abort

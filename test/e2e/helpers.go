@@ -21,7 +21,7 @@ import (
 )
 
 var chaosExperimentGVR = schema.GroupVersionResource{
-	Group:    "chaos.chaosplane.io",
+	Group:    "chaos.chaosplane.dev",
 	Version:  "v1alpha1",
 	Resource: "chaosexperiments",
 }

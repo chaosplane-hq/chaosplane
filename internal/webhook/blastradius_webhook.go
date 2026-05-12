@@ -78,7 +78,7 @@ func (v *BlastRadiusValidator) Handle(ctx context.Context, req admission.Request
 	if len(auditWarnings) > 0 {
 		warningsJSON, _ := json.Marshal(auditWarnings)
 		resp.AuditAnnotations = map[string]string{
-			"chaosplane.io/audit-warnings": string(warningsJSON),
+			"chaosplane.dev/audit-warnings": string(warningsJSON),
 		}
 	}
 	return resp

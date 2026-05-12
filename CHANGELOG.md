@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Operator
 
-- `ChaosExperiment` CRD (`chaos.chaosplane.io/v1alpha1`) with an 8-phase state machine: Pending, SteadyStateChecking, Running, Completing, Recovering, Completed, Failed, Aborted
+- `ChaosExperiment` CRD (`chaos.chaosplane.dev/v1alpha1`) with an 8-phase state machine: Pending, SteadyStateChecking, Running, Completing, Recovering, Completed, Failed, Aborted
 - `ChaosWorkflow` CRD with a DAG-based workflow engine supporting experiment, delay, condition, parallel, and suspend template types
 - `BlastRadiusPolicy` CRD with a validating admission webhook that enforces blast-radius constraints before experiments run
 - Executor interface and registry pattern for pluggable, extensible chaos action implementations

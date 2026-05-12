@@ -1,6 +1,6 @@
 # This fixture is intentionally invalid for CRD schema validation testing.
 # It is missing required fields: action.type and target.
-apiVersion: chaos.chaosplane.io/v1alpha1
+apiVersion: chaos.chaosplane.dev/v1alpha1
 kind: ChaosExperiment
 metadata:
   name: invalid-experiment
