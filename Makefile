@@ -66,12 +66,12 @@ dev: ## Start Tilt dev server
 build: ## Build all binaries (operator, agent, daemon, chaosctl) to bin/
 	@mkdir -p $(BIN_DIR)
 	$(foreach comp,$(COMPONENTS),\
-		CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o $(BIN_DIR)/$(comp) ./cmd/$(comp)/...;)
+		CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o $(BIN_DIR)/$(comp) ./cmd/$(comp);)
 
 .PHONY: build-%
 build-%: ## Build a specific binary (e.g. make build-operator)
 	@mkdir -p $(BIN_DIR)
-	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o $(BIN_DIR)/$* ./cmd/$*/...
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o $(BIN_DIR)/$* ./cmd/$*
 
 ##@ Test
 
