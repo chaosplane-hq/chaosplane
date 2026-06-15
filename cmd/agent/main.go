@@ -83,6 +83,12 @@ func main() {
 	go heartbeatLoop(ctx, cfg)
 	go topologyLoop(ctx, cfg)
 
+	agentInstance := os.Getenv("HOSTNAME")
+	if agentInstance == "" {
+		agentInstance = "agent"
+	}
+	go workLoop(ctx, cfg, agentInstance)
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit

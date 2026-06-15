@@ -1,9 +1,9 @@
 # Binaries
 bin/
-chaosctl
-agent
-daemon
-operator
+/chaosctl
+/agent
+/daemon
+/operator
 *.exe
 *.exe~
 *.dll
