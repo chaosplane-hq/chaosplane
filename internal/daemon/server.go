@@ -226,9 +226,12 @@ func (s *Server) resolvePodTarget(ctx context.Context, params map[string]string)
 	return podTarget{scoped: true, hostVeth: res.HostVethName, cgroupV2Path: res.CgroupV2Path}, nil
 }
 
-func (s *Server) ExecStressChaos(_ context.Context, req *daemonv1.StressChaosRequest) (*daemonv1.StressChaosResponse, error) {
+func (s *Server) ExecStressChaos(ctx context.Context, req *daemonv1.StressChaosRequest) (*daemonv1.StressChaosResponse, error) {
 	execID := uuid.New().String()
 	params := req.GetParameters()
+	if params == nil {
+		params = map[string]string{}
+	}
 	stressorType := req.GetStressorType()
 
 	duration := 60
@@ -238,7 +241,22 @@ func (s *Server) ExecStressChaos(_ context.Context, req *daemonv1.StressChaosReq
 		}
 	}
 
-	if err := s.sys.stressNGStart(stressorType, params, duration); err != nil {
+	target, err := s.resolvePodTarget(ctx, params)
+	if err != nil {
+		return &daemonv1.StressChaosResponse{Success: false, Applied: false, Message: err.Error()}, nil
+	}
+	// A pod target must be cgroup-scoped or it would stress the whole node; a
+	// resolved pod with an empty cgroup path is a resolver bug, reported here
+	// rather than silently stressing the host.
+	if target.scoped && target.cgroupV2Path == "" {
+		return &daemonv1.StressChaosResponse{
+			Success: false,
+			Applied: false,
+			Message: fmt.Sprintf("stress chaos %q: pod resolved but cgroup v2 path is empty; refusing to stress the whole node", stressorType),
+		}, nil
+	}
+
+	if err := s.sys.stressNGStart(stressorType, params, duration, target.cgroupV2Path); err != nil {
 		return &daemonv1.StressChaosResponse{
 			Success: false,
 			Applied: false,
@@ -372,7 +390,7 @@ func (s *Server) ExecNodeChaos(_ context.Context, req *daemonv1.NodeChaosRequest
 	var err error
 	switch action {
 	case "cpu-stress":
-		err = s.sys.stressNGStart("cpu", params, 60)
+		err = s.sys.stressNGStart("cpu", params, 60, "")
 	case "partition":
 		iface := params["iface"]
 		if iface == "" {

@@ -232,7 +232,7 @@ func (s *sysOps) partitionRestore(iface, direction, cidr string) {
 	}
 }
 
-func (s *sysOps) stressNGStart(stressorType string, params map[string]string, durationSec int) error {
+func (s *sysOps) stressNGStart(stressorType string, params map[string]string, durationSec int, cgroupPath string) error {
 	args := []string{}
 	switch stressorType {
 	case "cpu":
@@ -266,7 +266,32 @@ func (s *sysOps) stressNGStart(stressorType string, params map[string]string, du
 		args = append(args, "--timeout", fmt.Sprintf("%ds", durationSec))
 	}
 
+	if cgroupPath != "" {
+		return s.startInCgroup(cgroupPath, "stress-ng", args)
+	}
 	return s.runner.Start("stress-ng", args...)
+}
+
+// startInCgroup launches a process inside an existing cgroup v2 by moving the
+// shell into the cgroup before exec. Writing the shell's own PID to
+// cgroup.procs migrates it (and the exec'd child, since it keeps the PID) into
+// the pod's cgroup, so stress-ng runs under the pod's cpu/memory accounting and
+// limits. cgroupPath is the pod's path from the netns resolver. This needs no
+// privileged container, only write access to the host cgroup2 hierarchy.
+func (s *sysOps) startInCgroup(cgroupPath, name string, args []string) error {
+	procs := cgroupProcsFile(cgroupPath)
+	quoted := append([]string{name}, args...)
+	cmd := fmt.Sprintf("echo $$ > %s && exec %s", procs, strings.Join(quoted, " "))
+	return s.runner.Start("sh", "-c", cmd)
+}
+
+const cgroupV2Mount = "/sys/fs/cgroup"
+
+// cgroupProcsFile joins the cgroup2 mount with the pod's relative cgroup path
+// and the cgroup.procs control file processes are written to for migration.
+func cgroupProcsFile(cgroupPath string) string {
+	trimmed := strings.TrimPrefix(cgroupPath, "/")
+	return cgroupV2Mount + "/" + trimmed + "/cgroup.procs"
 }
 
 func (s *sysOps) stressNGStop() {

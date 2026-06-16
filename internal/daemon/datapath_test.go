@@ -349,3 +349,94 @@ func TestHTTPChaosRequiresResolver(t *testing.T) {
 		t.Fatalf("expected no host commands, calls: %v", rr.calls)
 	}
 }
+
+// TestStressScopedToPodCgroup verifies T11: a pod-scoped stress launches
+// stress-ng through a shell that migrates itself into the pod's cgroup.procs
+// before exec, so the load lands on the pod's cgroup, not the whole node.
+func TestStressScopedToPodCgroup(t *testing.T) {
+	rr := &recordingRunner{}
+	srv := newServerWithRunner(rr)
+	srv.SetResolver(resolverForVeth("vethIII", 19))
+
+	resp, _ := srv.ExecStressChaos(context.Background(), &daemonv1.StressChaosRequest{
+		ExperimentId: "exp-stress", StressorType: "cpu",
+		Parameters: map[string]string{
+			"workers": "2", "podName": "web-0", "podNamespace": "default",
+			"containerId": "cid", "nodeName": "node-1",
+		},
+	})
+	if !resp.GetSuccess() || !resp.GetApplied() {
+		t.Fatalf("expected success+applied, got %+v", resp)
+	}
+	call := rr.findCall("sh", "-c", "/sys/fs/cgroup/kubepods/podabc/cid/cgroup.procs", "stress-ng")
+	if call == nil {
+		t.Fatalf("expected sh wrapper writing to pod cgroup.procs, calls: %v", rr.calls)
+	}
+	if !strings.Contains(strings.Join(call, " "), "echo $$ >") {
+		t.Fatalf("expected cgroup migration via echo $$, got: %v", call)
+	}
+}
+
+// TestStressHostScopedWithoutPod verifies the legacy host-scoped path: no pod
+// identity means stress-ng runs directly (node-wide), keeping node chaos and
+// existing honesty tests working.
+func TestStressHostScopedWithoutPod(t *testing.T) {
+	rr := &recordingRunner{}
+	srv := newServerWithRunner(rr)
+
+	resp, _ := srv.ExecStressChaos(context.Background(), &daemonv1.StressChaosRequest{
+		ExperimentId: "exp-stress2", StressorType: "cpu",
+		Parameters: map[string]string{"workers": "2"},
+	})
+	if !resp.GetSuccess() {
+		t.Fatalf("expected success, got %+v", resp)
+	}
+	if rr.findCall("stress-ng", "--cpu", "2") == nil {
+		t.Fatalf("expected direct stress-ng launch, calls: %v", rr.calls)
+	}
+	if rr.findCall("sh", "-c") != nil {
+		t.Fatalf("host-scoped stress must not use a cgroup wrapper, calls: %v", rr.calls)
+	}
+}
+
+// TestStressRequiresResolver verifies a pod-named stress fault fails honestly
+// with no resolver rather than stressing the whole node.
+func TestStressRequiresResolver(t *testing.T) {
+	rr := &recordingRunner{}
+	srv := newServerWithRunner(rr)
+
+	resp, _ := srv.ExecStressChaos(context.Background(), &daemonv1.StressChaosRequest{
+		ExperimentId: "exp-stress3", StressorType: "memory",
+		Parameters: map[string]string{
+			"size": "256M", "podName": "web-0", "podNamespace": "default", "containerId": "cid",
+		},
+	})
+	if resp.GetSuccess() || resp.GetApplied() {
+		t.Fatalf("expected failure with no resolver, got %+v", resp)
+	}
+	if len(rr.calls) != 0 {
+		t.Fatalf("expected no host commands, calls: %v", rr.calls)
+	}
+}
+
+// TestStressResolvedButNoCgroupFails verifies the safety guard: a pod that
+// resolves but yields an empty cgroup path is rejected rather than silently
+// stressing the node.
+func TestStressResolvedButNoCgroupFails(t *testing.T) {
+	rr := &recordingRunner{}
+	srv := newServerWithRunner(rr)
+	srv.SetResolver(fakeResolver{res: &netns.Resolution{HostVethName: "vethJJJ", CgroupV2Path: ""}})
+
+	resp, _ := srv.ExecStressChaos(context.Background(), &daemonv1.StressChaosRequest{
+		ExperimentId: "exp-stress4", StressorType: "cpu",
+		Parameters: map[string]string{
+			"workers": "2", "podName": "web-0", "podNamespace": "default", "containerId": "cid",
+		},
+	})
+	if resp.GetSuccess() || resp.GetApplied() {
+		t.Fatalf("expected failure when cgroup path is empty, got %+v", resp)
+	}
+	if len(rr.calls) != 0 {
+		t.Fatalf("expected no stress launched, calls: %v", rr.calls)
+	}
+}
