@@ -1,16 +1,25 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.24-bookworm AS builder
 WORKDIR /workspace
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+# CGO disabled: the eBPF programs are assembled in-process via cilium/ebpf
+# (see internal/daemon/ebpf), so no C toolchain or compiled object/BTF files
+# are needed in the image.
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /daemon ./cmd/daemon/...
 
-# NOTE: The daemon container requires CAP_NET_ADMIN at runtime for network
-# fault injection (tc, iptables). Grant via securityContext in the DaemonSet spec:
-#   securityContext:
-#     capabilities:
-#       add: ["NET_ADMIN"]
-FROM gcr.io/distroless/static-debian12:nonroot
+# The daemon SHELLS OUT to tc (iproute2), iptables, and stress-ng for the
+# real fault datapath, so distroless/static cannot host it. iptables ships the
+# xt_string match the DNS fault relies on; procps provides pkill for stress
+# teardown. The container runs as root because the kernel only honors the
+# NET_ADMIN/BPF capabilities granted by the DaemonSet securityContext for a
+# privileged-by-capability (uid 0) process; it is NOT privileged:true.
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        iproute2 \
+        iptables \
+        stress-ng \
+        procps \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /daemon /app/daemon
-USER 65532:65532
 ENTRYPOINT ["/app/daemon"]
