@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -64,9 +65,23 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	// corev1 is required so the reconciler's client can list/resolve target
+	// pods (pod-kill executor lists corev1.PodList during the Running phase).
+	if err := corev1.AddToScheme(scheme); err != nil {
+		fmt.Fprintf(os.Stderr, "add corev1 to scheme: %v\n", err)
+		os.Exit(1)
+	}
+
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "create k8s client: %v\n", err)
+		os.Exit(1)
+	}
+
+	// The pod-kill executor resolves targets by listing pods matching the
+	// experiment's label selector. Seed one so the Running phase can execute.
+	if err := k8sClient.Create(testCtx, targetPod()); err != nil {
+		fmt.Fprintf(os.Stderr, "seed target pod: %v\n", err)
 		os.Exit(1)
 	}
 
