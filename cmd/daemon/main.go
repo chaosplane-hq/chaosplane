@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -16,6 +17,30 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
+
+// resolverFactory mirrors netns.New so configureResolver can be tested with a
+// fake that simulates a missing CRI socket.
+type resolverFactory func(criEndpoint string) (netns.Resolver, error)
+
+// configureResolver wires the CRI-backed resolver onto the server.
+//
+// A missing or unreachable CRI socket must NOT crash the daemon: without a
+// resolver the server still starts and honestly reports Success=false for
+// pod-targeted faults, which is strictly better than taking the whole node's
+// chaos daemon offline. We therefore log and continue rather than exiting.
+func configureResolver(srv *daemon.Server, criEndpoint string, newResolver resolverFactory, logf func(string, ...any)) {
+	if criEndpoint == "" {
+		logf("no CRI endpoint configured; pod-targeted faults will report failure until -cri-endpoint is set")
+		return
+	}
+	resolver, err := newResolver(criEndpoint)
+	if err != nil {
+		logf("netns resolver init failed for %s: %v; daemon will start and report failure for pod-targeted faults", criEndpoint, err)
+		return
+	}
+	srv.SetResolver(resolver)
+	logf("pod netns resolution enabled via %s", criEndpoint)
+}
 
 func main() {
 	addr := flag.String("addr", ":50051", "gRPC listen address")
@@ -44,15 +69,7 @@ func main() {
 
 	srv := grpc.NewServer(opts...)
 	chaosSrv := daemon.NewServer()
-	if *criEndpoint != "" {
-		resolver, err := netns.New(*criEndpoint)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to init netns resolver: %v\n", err)
-			os.Exit(1)
-		}
-		chaosSrv.SetResolver(resolver)
-		fmt.Printf("pod netns resolution enabled via %s\n", *criEndpoint)
-	}
+	configureResolver(chaosSrv, *criEndpoint, netns.New, log.Printf)
 	daemonv1.RegisterChaosDaemonServer(srv, chaosSrv)
 
 	healthSrv := health.NewServer()
