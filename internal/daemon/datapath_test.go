@@ -122,3 +122,78 @@ func TestNetworkLossNetemMode(t *testing.T) {
 		t.Fatalf("expected netem loss 25%% on vethCCC, calls: %v", rr.calls)
 	}
 }
+
+// TestNetworkPartitionDropsBothDirections verifies T8: a both-direction
+// partition installs iptables FORWARD DROP rules on the resolved veth for the
+// target CIDR in both directions, and is removed cleanly on cancel.
+func TestNetworkPartitionDropsBothDirections(t *testing.T) {
+	rr := &recordingRunner{}
+	srv := newServerWithRunner(rr)
+	srv.SetResolver(resolverForVeth("vethDDD", 14))
+
+	resp, _ := srv.ExecNetworkChaos(context.Background(), &daemonv1.NetworkChaosRequest{
+		ExperimentId: "exp-part", Action: "partition",
+		Namespace: "default", PodName: "web-0", ContainerId: "cid",
+		Parameters: map[string]string{"target_cidr": "10.0.0.0/24", "direction": "both"},
+	})
+	if !resp.GetSuccess() || !resp.GetApplied() {
+		t.Fatalf("expected success+applied, got %+v", resp)
+	}
+	if rr.findCall("iptables", "-A", "FORWARD", "-i", "vethDDD", "-d", "10.0.0.0/24", "DROP") == nil {
+		t.Fatalf("expected egress FORWARD drop rule, calls: %v", rr.calls)
+	}
+	if rr.findCall("iptables", "-A", "FORWARD", "-o", "vethDDD", "-s", "10.0.0.0/24", "DROP") == nil {
+		t.Fatalf("expected ingress FORWARD drop rule, calls: %v", rr.calls)
+	}
+
+	cancel, _ := srv.CancelChaos(context.Background(), &daemonv1.CancelRequest{ExecutionId: resp.GetExecutionId()})
+	if !cancel.GetSuccess() {
+		t.Fatalf("expected cancel success, got %+v", cancel)
+	}
+	if rr.findCall("iptables", "-D", "FORWARD", "-i", "vethDDD", "-d", "10.0.0.0/24", "DROP") == nil {
+		t.Fatalf("expected egress FORWARD drop rule removed on cancel, calls: %v", rr.calls)
+	}
+}
+
+// TestNetworkPartitionEgressOnly verifies a single-direction partition installs
+// only the egress (pod -> cidr) rule.
+func TestNetworkPartitionEgressOnly(t *testing.T) {
+	rr := &recordingRunner{}
+	srv := newServerWithRunner(rr)
+	srv.SetResolver(resolverForVeth("vethEEE", 15))
+
+	resp, _ := srv.ExecNetworkChaos(context.Background(), &daemonv1.NetworkChaosRequest{
+		ExperimentId: "exp-part2", Action: "partition",
+		Namespace: "default", PodName: "web-0", ContainerId: "cid",
+		Parameters: map[string]string{"target_cidr": "192.168.1.0/24", "direction": "egress"},
+	})
+	if !resp.GetSuccess() {
+		t.Fatalf("expected success, got %+v", resp)
+	}
+	if rr.findCall("iptables", "-A", "FORWARD", "-i", "vethEEE", "-d", "192.168.1.0/24") == nil {
+		t.Fatalf("expected egress rule, calls: %v", rr.calls)
+	}
+	if rr.findCall("iptables", "-o", "vethEEE") != nil {
+		t.Fatalf("expected NO ingress rule for egress-only, calls: %v", rr.calls)
+	}
+}
+
+// TestNetworkPartitionRequiresResolver verifies the no-privileged thesis: a pod
+// partition target with no resolver reports failure rather than faulting the
+// daemon's own interface.
+func TestNetworkPartitionRequiresResolver(t *testing.T) {
+	rr := &recordingRunner{}
+	srv := newServerWithRunner(rr)
+
+	resp, _ := srv.ExecNetworkChaos(context.Background(), &daemonv1.NetworkChaosRequest{
+		ExperimentId: "exp-part3", Action: "partition",
+		Namespace: "default", PodName: "web-0", ContainerId: "cid",
+		Parameters: map[string]string{"target_cidr": "10.0.0.0/24", "direction": "both"},
+	})
+	if resp.GetSuccess() || resp.GetApplied() {
+		t.Fatalf("expected failure with no resolver, got %+v", resp)
+	}
+	if len(rr.calls) != 0 {
+		t.Fatalf("expected no host commands when resolution fails, calls: %v", rr.calls)
+	}
+}

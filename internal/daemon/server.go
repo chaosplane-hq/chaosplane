@@ -61,6 +61,36 @@ func (s *Server) ExecNetworkChaos(ctx context.Context, req *daemonv1.NetworkChao
 		return errResp, nil
 	}
 
+	// Partition is an iptables drop on the host-side veth, not a netem qdisc:
+	// it blocks reachability to/from a CIDR per direction and must be undone by
+	// deleting the exact rules, so it has its own dispatch and cleanup path.
+	if action == "partition" {
+		if err := s.sys.partition(iface, params["direction"], params["target_cidr"]); err != nil {
+			return &daemonv1.NetworkChaosResponse{
+				Success: false,
+				Applied: false,
+				Message: fmt.Sprintf("network partition failed on iface %s: %v", iface, err),
+			}, nil
+		}
+		params["iface"] = iface
+		params["datapath"] = "iptables"
+		s.store.Add(execID, ExecutionInfo{
+			ID:           execID,
+			ExperimentID: req.GetExperimentId(),
+			Type:         "network",
+			Status:       "running",
+			StartTime:    time.Now(),
+			Parameters:   params,
+		})
+		log.Printf("exec network chaos: id=%s experiment=%s action=partition iface=%s cidr=%s dir=%s", execID, req.GetExperimentId(), iface, params["target_cidr"], params["direction"])
+		return &daemonv1.NetworkChaosResponse{
+			Success:     true,
+			Applied:     true,
+			Message:     "network chaos applied: partition",
+			ExecutionId: execID,
+		}, nil
+	}
+
 	// Delay is always a tc-netem fault: a TC/eBPF classifier cannot sleep, so
 	// there is no eBPF datapath that can actually delay a packet. Only loss has
 	// a real eBPF implementation; everything else (and delay specifically) runs
@@ -341,9 +371,12 @@ func (s *Server) CancelChaos(_ context.Context, req *daemonv1.CancelRequest) (*d
 		if iface == "" {
 			iface = "eth0"
 		}
-		if info.Parameters["datapath"] == "ebpf" {
+		switch info.Parameters["datapath"] {
+		case "ebpf":
 			_ = s.ebpfMgr.Unload(execID)
-		} else {
+		case "iptables":
+			s.sys.partitionRestore(iface, info.Parameters["direction"], info.Parameters["target_cidr"])
+		default:
 			_ = s.sys.tcDelete(iface)
 		}
 	case "stress":

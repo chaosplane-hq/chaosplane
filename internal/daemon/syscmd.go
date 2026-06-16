@@ -133,6 +133,56 @@ func (s *sysOps) iptablesUnblock(iface, direction string) error {
 	return nil
 }
 
+// partitionRules builds the iptables FORWARD rules that partition a pod from a
+// CIDR on its host-side veth. Pod traffic is forwarded through the host netns,
+// so rules live in FORWARD keyed on the veth:
+//
+//	egress  (pod -> cidr): -i veth -d cidr  (packets entering the host from the pod)
+//	ingress (cidr -> pod): -o veth -s cidr  (packets leaving the host toward the pod)
+//
+// Each returned slice is the rule body that follows the -A/-D verb.
+func partitionRules(iface, direction, cidr string) [][]string {
+	egress := []string{"FORWARD", "-i", iface, "-d", cidr, "-j", "DROP"}
+	ingress := []string{"FORWARD", "-o", iface, "-s", cidr, "-j", "DROP"}
+	switch direction {
+	case "egress":
+		return [][]string{egress}
+	case "ingress":
+		return [][]string{ingress}
+	default:
+		return [][]string{egress, ingress}
+	}
+}
+
+func (s *sysOps) partition(iface, direction, cidr string) error {
+	if cidr == "" {
+		return fmt.Errorf("partition requires target_cidr")
+	}
+	if direction == "" {
+		direction = "both"
+	}
+	for _, rule := range partitionRules(iface, direction, cidr) {
+		args := append([]string{"-A"}, rule...)
+		if _, err := s.runner.Run(context.Background(), "iptables", args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *sysOps) partitionRestore(iface, direction, cidr string) {
+	if cidr == "" {
+		return
+	}
+	if direction == "" {
+		direction = "both"
+	}
+	for _, rule := range partitionRules(iface, direction, cidr) {
+		args := append([]string{"-D"}, rule...)
+		_, _ = s.runner.Run(context.Background(), "iptables", args...)
+	}
+}
+
 func (s *sysOps) stressNGStart(stressorType string, params map[string]string, durationSec int) error {
 	args := []string{}
 	switch stressorType {
