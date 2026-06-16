@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -497,7 +498,7 @@ func TestReconcileTerminalStatesAreNoOp(t *testing.T) {
 
 	for _, phase := range []v1alpha1.ExperimentPhase{v1alpha1.PhaseCompleted, v1alpha1.PhaseFailed, v1alpha1.PhaseAborted} {
 		t.Run(string(phase), func(t *testing.T) {
-			exp := makeExperiment("test-terminal-"+string(phase), 30*time.Second)
+			exp := makeExperiment("test-terminal-"+strings.ToLower(string(phase)), 30*time.Second)
 			ctx := context.Background()
 			if err := k8sClient.Create(ctx, exp); err != nil {
 				t.Fatalf("create: %v", err)
