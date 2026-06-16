@@ -9,7 +9,17 @@ import (
 	"time"
 )
 
-func execCmd(ctx context.Context, name string, args ...string) (string, error) {
+// commandRunner is the seam between the daemon's fault logic and the host's
+// command-line tools (tc, iptables, stress-ng). Injecting a fake runner in
+// tests lets us assert failure propagation without touching the real host.
+type commandRunner interface {
+	Run(ctx context.Context, name string, args ...string) (string, error)
+	Start(name string, args ...string) error
+}
+
+type execRunner struct{}
+
+func (execRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
 	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -24,7 +34,19 @@ func execCmd(ctx context.Context, name string, args ...string) (string, error) {
 	return strings.TrimSpace(stdout.String()), nil
 }
 
-func tcAddNetem(iface, action string, params map[string]string) error {
+func (execRunner) Start(name string, args ...string) error {
+	return exec.Command(name, args...).Start()
+}
+
+type sysOps struct {
+	runner commandRunner
+}
+
+func newSysOps(r commandRunner) *sysOps {
+	return &sysOps{runner: r}
+}
+
+func (s *sysOps) tcAddNetem(iface, action string, params map[string]string) error {
 	args := []string{"qdisc", "add", "dev", iface, "root", "netem"}
 
 	switch action {
@@ -75,43 +97,43 @@ func tcAddNetem(iface, action string, params map[string]string) error {
 		args = []string{"qdisc", "add", "dev", iface, "root", "tbf", "rate", rate, "burst", "32kbit", "latency", "400ms"}
 	}
 
-	_, err := execCmd(context.Background(), "tc", args...)
+	_, err := s.runner.Run(context.Background(), "tc", args...)
 	return err
 }
 
-func tcDelete(iface string) error {
-	_, _ = execCmd(context.Background(), "tc", "qdisc", "del", "dev", iface, "root")
+func (s *sysOps) tcDelete(iface string) error {
+	_, _ = s.runner.Run(context.Background(), "tc", "qdisc", "del", "dev", iface, "root")
 	return nil
 }
 
-func iptablesBlock(iface, direction string) error {
+func (s *sysOps) iptablesBlock(iface, direction string) error {
 	chain := "OUTPUT"
 	if direction == "ingress" || direction == "both" {
 		chain = "INPUT"
 	}
-	_, err := execCmd(context.Background(), "iptables", "-A", chain, "-i", iface, "-j", "DROP")
+	_, err := s.runner.Run(context.Background(), "iptables", "-A", chain, "-i", iface, "-j", "DROP")
 	if err != nil {
 		return err
 	}
 	if direction == "both" {
-		_, err = execCmd(context.Background(), "iptables", "-A", "OUTPUT", "-o", iface, "-j", "DROP")
+		_, err = s.runner.Run(context.Background(), "iptables", "-A", "OUTPUT", "-o", iface, "-j", "DROP")
 	}
 	return err
 }
 
-func iptablesUnblock(iface, direction string) error {
+func (s *sysOps) iptablesUnblock(iface, direction string) error {
 	chain := "OUTPUT"
 	if direction == "ingress" || direction == "both" {
 		chain = "INPUT"
 	}
-	_, _ = execCmd(context.Background(), "iptables", "-D", chain, "-i", iface, "-j", "DROP")
+	_, _ = s.runner.Run(context.Background(), "iptables", "-D", chain, "-i", iface, "-j", "DROP")
 	if direction == "both" {
-		_, _ = execCmd(context.Background(), "iptables", "-D", "OUTPUT", "-o", iface, "-j", "DROP")
+		_, _ = s.runner.Run(context.Background(), "iptables", "-D", "OUTPUT", "-o", iface, "-j", "DROP")
 	}
 	return nil
 }
 
-func stressNGStart(stressorType string, params map[string]string, durationSec int) error {
+func (s *sysOps) stressNGStart(stressorType string, params map[string]string, durationSec int) error {
 	args := []string{}
 	switch stressorType {
 	case "cpu":
@@ -145,15 +167,14 @@ func stressNGStart(stressorType string, params map[string]string, durationSec in
 		args = append(args, "--timeout", fmt.Sprintf("%ds", durationSec))
 	}
 
-	cmd := exec.Command("stress-ng", args...)
-	return cmd.Start()
+	return s.runner.Start("stress-ng", args...)
 }
 
-func stressNGStop() {
-	_, _ = execCmd(context.Background(), "pkill", "-f", "stress-ng")
+func (s *sysOps) stressNGStop() {
+	_, _ = s.runner.Run(context.Background(), "pkill", "-f", "stress-ng")
 }
 
-func dnsIntercept(action string, params map[string]string) error {
+func (s *sysOps) dnsIntercept(action string, params map[string]string) error {
 	domains := params["domains"]
 	if domains == "" {
 		return fmt.Errorf("domains parameter required for dns chaos")
@@ -166,7 +187,7 @@ func dnsIntercept(action string, params map[string]string) error {
 		}
 		switch action {
 		case "error":
-			_, err := execCmd(context.Background(), "iptables", "-A", "OUTPUT", "-p", "udp", "--dport", "53", "-m", "string", "--string", domain, "--algo", "bm", "-j", "DROP")
+			_, err := s.runner.Run(context.Background(), "iptables", "-A", "OUTPUT", "-p", "udp", "--dport", "53", "-m", "string", "--string", domain, "--algo", "bm", "-j", "DROP")
 			if err != nil {
 				return err
 			}
@@ -175,13 +196,13 @@ func dnsIntercept(action string, params map[string]string) error {
 	return nil
 }
 
-func dnsRestore(params map[string]string) {
+func (s *sysOps) dnsRestore(params map[string]string) {
 	domains := params["domains"]
 	for _, domain := range strings.Split(domains, ",") {
 		domain = strings.TrimSpace(domain)
 		if domain == "" {
 			continue
 		}
-		_, _ = execCmd(context.Background(), "iptables", "-D", "OUTPUT", "-p", "udp", "--dport", "53", "-m", "string", "--string", domain, "--algo", "bm", "-j", "DROP")
+		_, _ = s.runner.Run(context.Background(), "iptables", "-D", "OUTPUT", "-p", "udp", "--dport", "53", "-m", "string", "--string", domain, "--algo", "bm", "-j", "DROP")
 	}
 }

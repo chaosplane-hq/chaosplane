@@ -20,6 +20,7 @@ type NetworkChaosResponse struct {
 	Success     bool   `json:"success,omitempty"`
 	Message     string `json:"message,omitempty"`
 	ExecutionId string `json:"execution_id,omitempty"`
+	Applied     bool   `json:"applied,omitempty"`
 }
 
 func (x *NetworkChaosResponse) Reset()         {}
@@ -29,6 +30,7 @@ func (x *NetworkChaosResponse) ProtoMessage()  {}
 func (x *NetworkChaosResponse) GetSuccess() bool       { return x.Success }
 func (x *NetworkChaosResponse) GetMessage() string     { return x.Message }
 func (x *NetworkChaosResponse) GetExecutionId() string { return x.ExecutionId }
+func (x *NetworkChaosResponse) GetApplied() bool       { return x.Applied }
 
 type StressChaosRequest struct {
 	ExperimentId string            `json:"experiment_id,omitempty"`
@@ -48,6 +50,7 @@ type StressChaosResponse struct {
 	Success     bool   `json:"success,omitempty"`
 	Message     string `json:"message,omitempty"`
 	ExecutionId string `json:"execution_id,omitempty"`
+	Applied     bool   `json:"applied,omitempty"`
 }
 
 func (x *StressChaosResponse) Reset()         {}
@@ -57,6 +60,7 @@ func (x *StressChaosResponse) ProtoMessage()  {}
 func (x *StressChaosResponse) GetSuccess() bool       { return x.Success }
 func (x *StressChaosResponse) GetMessage() string     { return x.Message }
 func (x *StressChaosResponse) GetExecutionId() string { return x.ExecutionId }
+func (x *StressChaosResponse) GetApplied() bool       { return x.Applied }
 
 type DNSChaosRequest struct {
 	ExperimentId string            `json:"experiment_id,omitempty"`
@@ -76,6 +80,7 @@ type DNSChaosResponse struct {
 	Success     bool   `json:"success,omitempty"`
 	Message     string `json:"message,omitempty"`
 	ExecutionId string `json:"execution_id,omitempty"`
+	Applied     bool   `json:"applied,omitempty"`
 }
 
 func (x *DNSChaosResponse) Reset()         {}
@@ -85,6 +90,7 @@ func (x *DNSChaosResponse) ProtoMessage()  {}
 func (x *DNSChaosResponse) GetSuccess() bool       { return x.Success }
 func (x *DNSChaosResponse) GetMessage() string     { return x.Message }
 func (x *DNSChaosResponse) GetExecutionId() string { return x.ExecutionId }
+func (x *DNSChaosResponse) GetApplied() bool       { return x.Applied }
 
 type HTTPChaosRequest struct {
 	ExperimentId string            `json:"experiment_id,omitempty"`
@@ -106,6 +112,7 @@ type HTTPChaosResponse struct {
 	Success     bool   `json:"success,omitempty"`
 	Message     string `json:"message,omitempty"`
 	ExecutionId string `json:"execution_id,omitempty"`
+	Applied     bool   `json:"applied,omitempty"`
 }
 
 func (x *HTTPChaosResponse) Reset()         {}
@@ -115,6 +122,7 @@ func (x *HTTPChaosResponse) ProtoMessage()  {}
 func (x *HTTPChaosResponse) GetSuccess() bool       { return x.Success }
 func (x *HTTPChaosResponse) GetMessage() string     { return x.Message }
 func (x *HTTPChaosResponse) GetExecutionId() string { return x.ExecutionId }
+func (x *HTTPChaosResponse) GetApplied() bool       { return x.Applied }
 
 type NodeChaosRequest struct {
 	ExperimentId string            `json:"experiment_id,omitempty"`
@@ -134,6 +142,7 @@ type NodeChaosResponse struct {
 	Success     bool   `json:"success,omitempty"`
 	Message     string `json:"message,omitempty"`
 	ExecutionId string `json:"execution_id,omitempty"`
+	Applied     bool   `json:"applied,omitempty"`
 }
 
 func (x *NodeChaosResponse) Reset()         {}
@@ -143,6 +152,7 @@ func (x *NodeChaosResponse) ProtoMessage()  {}
 func (x *NodeChaosResponse) GetSuccess() bool       { return x.Success }
 func (x *NodeChaosResponse) GetMessage() string     { return x.Message }
 func (x *NodeChaosResponse) GetExecutionId() string { return x.ExecutionId }
+func (x *NodeChaosResponse) GetApplied() bool       { return x.Applied }
 
 type CancelRequest struct {
 	ExecutionId string `json:"execution_id,omitempty"`

@@ -25,6 +25,7 @@ message NetworkChaosResponse {
   bool success = 1;
   string message = 2;
   string execution_id = 3;
+  bool applied = 4;
 }
 
 message StressChaosRequest {
@@ -37,6 +38,7 @@ message StressChaosResponse {
   bool success = 1;
   string message = 2;
   string execution_id = 3;
+  bool applied = 4;
 }
 
 message DNSChaosRequest {
@@ -49,6 +51,7 @@ message DNSChaosResponse {
   bool success = 1;
   string message = 2;
   string execution_id = 3;
+  bool applied = 4;
 }
 
 message HTTPChaosRequest {
@@ -62,6 +65,7 @@ message HTTPChaosResponse {
   bool success = 1;
   string message = 2;
   string execution_id = 3;
+  bool applied = 4;
 }
 
 message NodeChaosRequest {
@@ -74,6 +78,7 @@ message NodeChaosResponse {
   bool success = 1;
   string message = 2;
   string execution_id = 3;
+  bool applied = 4;
 }
 
 message CancelRequest {

@@ -17,6 +17,7 @@ type Server struct {
 	daemonv1.UnimplementedChaosDaemonServer
 	store   *ExecutionStore
 	ebpfMgr *daemonebpf.Manager
+	sys     *sysOps
 }
 
 func NewServer() *Server {
@@ -24,6 +25,16 @@ func NewServer() *Server {
 	return &Server{
 		store:   NewExecutionStore(),
 		ebpfMgr: daemonebpf.NewManager(logger),
+		sys:     newSysOps(execRunner{}),
+	}
+}
+
+func newServerWithRunner(r commandRunner) *Server {
+	logger := slog.Default()
+	return &Server{
+		store:   NewExecutionStore(),
+		ebpfMgr: daemonebpf.NewManager(logger),
+		sys:     newSysOps(r),
 	}
 }
 
@@ -67,11 +78,15 @@ func (s *Server) ExecNetworkChaos(ctx context.Context, req *daemonv1.NetworkChao
 			err = fmt.Errorf("unsupported ebpf action: %s", action)
 		}
 		if err != nil {
-			return &daemonv1.NetworkChaosResponse{Success: false, Message: err.Error()}, nil
+			return &daemonv1.NetworkChaosResponse{Success: false, Applied: false, Message: err.Error()}, nil
 		}
 	} else {
-		if err := tcAddNetem(iface, action, params); err != nil {
-			log.Printf("warn: tc command failed (may not be available in this environment): %v", err)
+		if err := s.sys.tcAddNetem(iface, action, params); err != nil {
+			return &daemonv1.NetworkChaosResponse{
+				Success: false,
+				Applied: false,
+				Message: fmt.Sprintf("network chaos %q failed on iface %s: %v", action, iface, err),
+			}, nil
 		}
 	}
 
@@ -86,6 +101,7 @@ func (s *Server) ExecNetworkChaos(ctx context.Context, req *daemonv1.NetworkChao
 	log.Printf("exec network chaos: id=%s experiment=%s action=%s iface=%s mode=%s", execID, req.GetExperimentId(), action, iface, params["mode"])
 	return &daemonv1.NetworkChaosResponse{
 		Success:     true,
+		Applied:     true,
 		Message:     fmt.Sprintf("network chaos applied: %s", action),
 		ExecutionId: execID,
 	}, nil
@@ -103,8 +119,12 @@ func (s *Server) ExecStressChaos(_ context.Context, req *daemonv1.StressChaosReq
 		}
 	}
 
-	if err := stressNGStart(stressorType, params, duration); err != nil {
-		log.Printf("warn: stress-ng command failed (may not be available in this environment): %v", err)
+	if err := s.sys.stressNGStart(stressorType, params, duration); err != nil {
+		return &daemonv1.StressChaosResponse{
+			Success: false,
+			Applied: false,
+			Message: fmt.Sprintf("stress chaos %q failed: %v", stressorType, err),
+		}, nil
 	}
 
 	s.store.Add(execID, ExecutionInfo{
@@ -118,6 +138,7 @@ func (s *Server) ExecStressChaos(_ context.Context, req *daemonv1.StressChaosReq
 	log.Printf("exec stress chaos: id=%s experiment=%s stressor=%s", execID, req.GetExperimentId(), stressorType)
 	return &daemonv1.StressChaosResponse{
 		Success:     true,
+		Applied:     true,
 		Message:     fmt.Sprintf("stress chaos applied: %s", stressorType),
 		ExecutionId: execID,
 	}, nil
@@ -128,8 +149,12 @@ func (s *Server) ExecDNSChaos(_ context.Context, req *daemonv1.DNSChaosRequest) 
 	params := req.GetParameters()
 	action := req.GetAction()
 
-	if err := dnsIntercept(action, params); err != nil {
-		log.Printf("warn: dns intercept failed (may not be available in this environment): %v", err)
+	if err := s.sys.dnsIntercept(action, params); err != nil {
+		return &daemonv1.DNSChaosResponse{
+			Success: false,
+			Applied: false,
+			Message: fmt.Sprintf("dns chaos %q failed: %v", action, err),
+		}, nil
 	}
 
 	s.store.Add(execID, ExecutionInfo{
@@ -143,6 +168,7 @@ func (s *Server) ExecDNSChaos(_ context.Context, req *daemonv1.DNSChaosRequest) 
 	log.Printf("exec dns chaos: id=%s experiment=%s action=%s", execID, req.GetExperimentId(), action)
 	return &daemonv1.DNSChaosResponse{
 		Success:     true,
+		Applied:     true,
 		Message:     fmt.Sprintf("dns chaos applied: %s", action),
 		ExecutionId: execID,
 	}, nil
@@ -154,14 +180,34 @@ func (s *Server) ExecHTTPChaos(_ context.Context, req *daemonv1.HTTPChaosRequest
 	action := req.GetAction()
 	port := req.GetPort()
 
-	if port > 0 {
-		portStr := strconv.Itoa(int(port))
-		switch action {
-		case "abort":
-			_, _ = execCmd(context.Background(), "iptables", "-A", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "REJECT")
-		case "delay":
-			_, _ = execCmd(context.Background(), "tc", "qdisc", "add", "dev", "lo", "root", "netem", "delay", params["delay"]+"ms")
-		}
+	if port <= 0 {
+		return &daemonv1.HTTPChaosResponse{
+			Success: false,
+			Applied: false,
+			Message: "http chaos requires a positive port",
+		}, nil
+	}
+
+	portStr := strconv.Itoa(int(port))
+	var err error
+	switch action {
+	case "abort":
+		_, err = s.sys.runner.Run(context.Background(), "iptables", "-A", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "REJECT")
+	case "delay":
+		_, err = s.sys.runner.Run(context.Background(), "tc", "qdisc", "add", "dev", "lo", "root", "netem", "delay", params["delay"]+"ms")
+	default:
+		return &daemonv1.HTTPChaosResponse{
+			Success: false,
+			Applied: false,
+			Message: fmt.Sprintf("unsupported http chaos action: %s", action),
+		}, nil
+	}
+	if err != nil {
+		return &daemonv1.HTTPChaosResponse{
+			Success: false,
+			Applied: false,
+			Message: fmt.Sprintf("http chaos %q failed on port %d: %v", action, port, err),
+		}, nil
 	}
 
 	s.store.Add(execID, ExecutionInfo{
@@ -175,6 +221,7 @@ func (s *Server) ExecHTTPChaos(_ context.Context, req *daemonv1.HTTPChaosRequest
 	log.Printf("exec http chaos: id=%s experiment=%s action=%s port=%d", execID, req.GetExperimentId(), action, port)
 	return &daemonv1.HTTPChaosResponse{
 		Success:     true,
+		Applied:     true,
 		Message:     fmt.Sprintf("http chaos applied: %s", action),
 		ExecutionId: execID,
 	}, nil
@@ -185,15 +232,29 @@ func (s *Server) ExecNodeChaos(_ context.Context, req *daemonv1.NodeChaosRequest
 	params := req.GetParameters()
 	action := req.GetAction()
 
+	var err error
 	switch action {
 	case "cpu-stress":
-		_ = stressNGStart("cpu", params, 60)
+		err = s.sys.stressNGStart("cpu", params, 60)
 	case "partition":
 		iface := params["iface"]
 		if iface == "" {
 			iface = "eth0"
 		}
-		_ = iptablesBlock(iface, "both")
+		err = s.sys.iptablesBlock(iface, "both")
+	default:
+		return &daemonv1.NodeChaosResponse{
+			Success: false,
+			Applied: false,
+			Message: fmt.Sprintf("unsupported node chaos action: %s", action),
+		}, nil
+	}
+	if err != nil {
+		return &daemonv1.NodeChaosResponse{
+			Success: false,
+			Applied: false,
+			Message: fmt.Sprintf("node chaos %q failed: %v", action, err),
+		}, nil
 	}
 
 	s.store.Add(execID, ExecutionInfo{
@@ -207,6 +268,7 @@ func (s *Server) ExecNodeChaos(_ context.Context, req *daemonv1.NodeChaosRequest
 	log.Printf("exec node chaos: id=%s experiment=%s action=%s", execID, req.GetExperimentId(), action)
 	return &daemonv1.NodeChaosResponse{
 		Success:     true,
+		Applied:     true,
 		Message:     fmt.Sprintf("node chaos applied: %s", action),
 		ExecutionId: execID,
 	}, nil
@@ -231,22 +293,22 @@ func (s *Server) CancelChaos(_ context.Context, req *daemonv1.CancelRequest) (*d
 			if iface == "" {
 				iface = "eth0"
 			}
-			_ = tcDelete(iface)
+			_ = s.sys.tcDelete(iface)
 		}
 	case "stress":
-		stressNGStop()
+		s.sys.stressNGStop()
 	case "dns":
-		dnsRestore(info.Parameters)
+		s.sys.dnsRestore(info.Parameters)
 	case "http":
 		if port := info.Parameters["port"]; port != "" {
-			_, _ = execCmd(context.Background(), "iptables", "-D", "INPUT", "-p", "tcp", "--dport", port, "-j", "REJECT")
-			_ = tcDelete("lo")
+			_, _ = s.sys.runner.Run(context.Background(), "iptables", "-D", "INPUT", "-p", "tcp", "--dport", port, "-j", "REJECT")
+			_ = s.sys.tcDelete("lo")
 		}
 	case "node":
 		if info.Parameters["iface"] != "" {
-			_ = iptablesUnblock(info.Parameters["iface"], "both")
+			_ = s.sys.iptablesUnblock(info.Parameters["iface"], "both")
 		}
-		stressNGStop()
+		s.sys.stressNGStop()
 	}
 
 	s.store.Remove(execID)

@@ -10,7 +10,7 @@ import (
 )
 
 func TestExecNetworkChaos(t *testing.T) {
-	srv := NewServer()
+	srv := newServerWithRunner(fakeRunner{})
 	resp, err := srv.ExecNetworkChaos(context.Background(), &daemonv1.NetworkChaosRequest{
 		ExperimentId: "exp-1",
 		Action:       "delay",
@@ -29,7 +29,7 @@ func TestExecNetworkChaos(t *testing.T) {
 }
 
 func TestExecStressChaos(t *testing.T) {
-	srv := NewServer()
+	srv := newServerWithRunner(fakeRunner{})
 	resp, err := srv.ExecStressChaos(context.Background(), &daemonv1.StressChaosRequest{
 		ExperimentId: "exp-2",
 		StressorType: "cpu",
@@ -47,11 +47,11 @@ func TestExecStressChaos(t *testing.T) {
 }
 
 func TestExecDNSChaos(t *testing.T) {
-	srv := NewServer()
+	srv := newServerWithRunner(fakeRunner{})
 	resp, err := srv.ExecDNSChaos(context.Background(), &daemonv1.DNSChaosRequest{
 		ExperimentId: "exp-3",
 		Action:       "error",
-		Parameters:   map[string]string{"domain": "example.com"},
+		Parameters:   map[string]string{"domains": "example.com"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -65,7 +65,7 @@ func TestExecDNSChaos(t *testing.T) {
 }
 
 func TestExecHTTPChaos(t *testing.T) {
-	srv := NewServer()
+	srv := newServerWithRunner(fakeRunner{})
 	resp, err := srv.ExecHTTPChaos(context.Background(), &daemonv1.HTTPChaosRequest{
 		ExperimentId: "exp-4",
 		Action:       "abort",
@@ -84,11 +84,11 @@ func TestExecHTTPChaos(t *testing.T) {
 }
 
 func TestExecNodeChaos(t *testing.T) {
-	srv := NewServer()
+	srv := newServerWithRunner(fakeRunner{})
 	resp, err := srv.ExecNodeChaos(context.Background(), &daemonv1.NodeChaosRequest{
 		ExperimentId: "exp-5",
-		Action:       "shutdown",
-		Parameters:   map[string]string{"grace_period": "30s"},
+		Action:       "cpu-stress",
+		Parameters:   map[string]string{"workers": "2"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -102,7 +102,7 @@ func TestExecNodeChaos(t *testing.T) {
 }
 
 func TestCancelChaos(t *testing.T) {
-	srv := NewServer()
+	srv := newServerWithRunner(fakeRunner{})
 
 	resp, err := srv.ExecNetworkChaos(context.Background(), &daemonv1.NetworkChaosRequest{
 		ExperimentId: "exp-cancel",
@@ -135,7 +135,7 @@ func TestCancelChaos(t *testing.T) {
 }
 
 func TestGetChaosStatus(t *testing.T) {
-	srv := NewServer()
+	srv := newServerWithRunner(fakeRunner{})
 	ctx := context.Background()
 
 	statusResp, err := srv.GetChaosStatus(ctx, &daemonv1.StatusRequest{})
@@ -148,7 +148,7 @@ func TestGetChaosStatus(t *testing.T) {
 
 	srv.ExecNetworkChaos(ctx, &daemonv1.NetworkChaosRequest{ExperimentId: "exp-s1", Action: "delay"})
 	srv.ExecStressChaos(ctx, &daemonv1.StressChaosRequest{ExperimentId: "exp-s2", StressorType: "cpu"})
-	srv.ExecDNSChaos(ctx, &daemonv1.DNSChaosRequest{ExperimentId: "exp-s3", Action: "error"})
+	srv.ExecDNSChaos(ctx, &daemonv1.DNSChaosRequest{ExperimentId: "exp-s3", Action: "error", Parameters: map[string]string{"domains": "example.com"}})
 
 	statusResp, err = srv.GetChaosStatus(ctx, &daemonv1.StatusRequest{})
 	if err != nil {
