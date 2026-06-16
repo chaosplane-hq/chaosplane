@@ -19,6 +19,14 @@ message NetworkChaosRequest {
   string action = 2;        // delay, loss, corrupt, duplicate
   string target_iface = 3;
   map<string, string> parameters = 4;
+
+  // Pod identity. The daemon resolves the real host-side veth peer for this
+  // pod server-side (see internal/daemon/netns); callers must not guess the
+  // interface name.
+  string namespace = 5;
+  string pod_name = 6;
+  string container_id = 7;
+  string node_name = 8;
 }
 
 message NetworkChaosResponse {

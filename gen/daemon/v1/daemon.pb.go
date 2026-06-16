@@ -5,6 +5,10 @@ type NetworkChaosRequest struct {
 	Action       string            `json:"action,omitempty"`
 	TargetIface  string            `json:"target_iface,omitempty"`
 	Parameters   map[string]string `json:"parameters,omitempty"`
+	Namespace    string            `json:"namespace,omitempty"`
+	PodName      string            `json:"pod_name,omitempty"`
+	ContainerId  string            `json:"container_id,omitempty"`
+	NodeName     string            `json:"node_name,omitempty"`
 }
 
 func (x *NetworkChaosRequest) Reset()         {}
@@ -15,6 +19,10 @@ func (x *NetworkChaosRequest) GetExperimentId() string          { return x.Exper
 func (x *NetworkChaosRequest) GetAction() string                { return x.Action }
 func (x *NetworkChaosRequest) GetTargetIface() string           { return x.TargetIface }
 func (x *NetworkChaosRequest) GetParameters() map[string]string { return x.Parameters }
+func (x *NetworkChaosRequest) GetNamespace() string             { return x.Namespace }
+func (x *NetworkChaosRequest) GetPodName() string               { return x.PodName }
+func (x *NetworkChaosRequest) GetContainerId() string           { return x.ContainerId }
+func (x *NetworkChaosRequest) GetNodeName() string              { return x.NodeName }
 
 type NetworkChaosResponse struct {
 	Success     bool   `json:"success,omitempty"`
