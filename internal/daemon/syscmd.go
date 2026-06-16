@@ -224,10 +224,33 @@ func (s *sysOps) stressNGStop() {
 	_, _ = s.runner.Run(context.Background(), "pkill", "-f", "stress-ng")
 }
 
-func (s *sysOps) dnsIntercept(action string, params map[string]string) error {
+// dnsRuleBodies returns the iptables rule bodies (after the -A/-D verb) that
+// intercept DNS for a single domain. When scoped to a pod, the rule lives in
+// FORWARD matched on the pod's host-side veth (-i iface) so only that pod's
+// queries are affected; the daemon's own resolution is untouched. Unscoped, it
+// falls back to the daemon-local OUTPUT chain. Both UDP and TCP port 53 are
+// matched because resolvers retry over TCP for large or truncated answers.
+func dnsRuleBodies(iface, domain string, scoped bool) [][]string {
+	chain, scopeMatch := "OUTPUT", []string{}
+	if scoped {
+		chain, scopeMatch = "FORWARD", []string{"-i", iface}
+	}
+	bodies := make([][]string, 0, 2)
+	for _, proto := range []string{"udp", "tcp"} {
+		body := append([]string{chain, "-p", proto}, scopeMatch...)
+		body = append(body, "--dport", "53", "-m", "string", "--string", domain, "--algo", "bm", "-j", "DROP")
+		bodies = append(bodies, body)
+	}
+	return bodies
+}
+
+func (s *sysOps) dnsIntercept(action string, target podTarget, params map[string]string) error {
 	domains := params["domains"]
 	if domains == "" {
 		return fmt.Errorf("domains parameter required for dns chaos")
+	}
+	if action != "error" {
+		return fmt.Errorf("unsupported dns chaos action: %s", action)
 	}
 
 	for _, domain := range strings.Split(domains, ",") {
@@ -235,10 +258,9 @@ func (s *sysOps) dnsIntercept(action string, params map[string]string) error {
 		if domain == "" {
 			continue
 		}
-		switch action {
-		case "error":
-			_, err := s.runner.Run(context.Background(), "iptables", "-A", "OUTPUT", "-p", "udp", "--dport", "53", "-m", "string", "--string", domain, "--algo", "bm", "-j", "DROP")
-			if err != nil {
+		for _, body := range dnsRuleBodies(target.hostVeth, domain, target.scoped) {
+			args := append([]string{"-A"}, body...)
+			if _, err := s.runner.Run(context.Background(), "iptables", args...); err != nil {
 				return err
 			}
 		}
@@ -248,11 +270,15 @@ func (s *sysOps) dnsIntercept(action string, params map[string]string) error {
 
 func (s *sysOps) dnsRestore(params map[string]string) {
 	domains := params["domains"]
+	scoped := params["iface"] != ""
 	for _, domain := range strings.Split(domains, ",") {
 		domain = strings.TrimSpace(domain)
 		if domain == "" {
 			continue
 		}
-		_, _ = s.runner.Run(context.Background(), "iptables", "-D", "OUTPUT", "-p", "udp", "--dport", "53", "-m", "string", "--string", domain, "--algo", "bm", "-j", "DROP")
+		for _, body := range dnsRuleBodies(params["iface"], domain, scoped) {
+			args := append([]string{"-D"}, body...)
+			_, _ = s.runner.Run(context.Background(), "iptables", args...)
+		}
 	}
 }

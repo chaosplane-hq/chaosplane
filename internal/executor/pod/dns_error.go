@@ -61,6 +61,8 @@ func (e *DNSErrorExecutor) Execute(ctx context.Context, exp *v1alpha1.ChaosExper
 				"errorType":    params["errorType"],
 				"podName":      p.Name,
 				"podNamespace": p.Namespace,
+				"containerId":  ContainerID(&p),
+				"nodeName":     p.Spec.NodeName,
 			},
 		})
 		if err != nil {

@@ -197,3 +197,72 @@ func TestNetworkPartitionRequiresResolver(t *testing.T) {
 		t.Fatalf("expected no host commands when resolution fails, calls: %v", rr.calls)
 	}
 }
+
+// TestDNSChaosScopedToVeth verifies T9: a pod-scoped DNS fault drops port-53
+// traffic in the FORWARD chain matched on the resolved veth (not the daemon's
+// OUTPUT chain), covering both UDP and TCP, and cleans up on cancel.
+func TestDNSChaosScopedToVeth(t *testing.T) {
+	rr := &recordingRunner{}
+	srv := newServerWithRunner(rr)
+	srv.SetResolver(resolverForVeth("vethFFF", 16))
+
+	resp, _ := srv.ExecDNSChaos(context.Background(), &daemonv1.DNSChaosRequest{
+		ExperimentId: "exp-dns", Action: "error",
+		Parameters: map[string]string{
+			"domains": "evil.example.com", "podName": "web-0",
+			"podNamespace": "default", "containerId": "cid", "nodeName": "node-1",
+		},
+	})
+	if !resp.GetSuccess() || !resp.GetApplied() {
+		t.Fatalf("expected success+applied, got %+v", resp)
+	}
+	if rr.findCall("iptables", "-A", "FORWARD", "udp", "vethFFF", "evil.example.com") == nil {
+		t.Fatalf("expected scoped UDP FORWARD rule on vethFFF, calls: %v", rr.calls)
+	}
+	if rr.findCall("iptables", "-A", "FORWARD", "tcp", "vethFFF", "evil.example.com") == nil {
+		t.Fatalf("expected scoped TCP FORWARD rule on vethFFF, calls: %v", rr.calls)
+	}
+	for _, c := range rr.calls {
+		if c[0] == "iptables" && contains(c, "OUTPUT") {
+			t.Fatalf("scoped DNS must not touch the daemon OUTPUT chain, calls: %v", rr.calls)
+		}
+	}
+
+	cancel, _ := srv.CancelChaos(context.Background(), &daemonv1.CancelRequest{ExecutionId: resp.GetExecutionId()})
+	if !cancel.GetSuccess() {
+		t.Fatalf("expected cancel success, got %+v", cancel)
+	}
+	if rr.findCall("iptables", "-D", "FORWARD", "vethFFF", "evil.example.com") == nil {
+		t.Fatalf("expected DNS rule removed on cancel, calls: %v", rr.calls)
+	}
+}
+
+// TestDNSChaosRequiresResolver verifies a pod-named DNS fault fails honestly
+// when no resolver is configured, issuing no host commands.
+func TestDNSChaosRequiresResolver(t *testing.T) {
+	rr := &recordingRunner{}
+	srv := newServerWithRunner(rr)
+
+	resp, _ := srv.ExecDNSChaos(context.Background(), &daemonv1.DNSChaosRequest{
+		ExperimentId: "exp-dns2", Action: "error",
+		Parameters: map[string]string{
+			"domains": "evil.example.com", "podName": "web-0",
+			"podNamespace": "default", "containerId": "cid",
+		},
+	})
+	if resp.GetSuccess() || resp.GetApplied() {
+		t.Fatalf("expected failure with no resolver, got %+v", resp)
+	}
+	if len(rr.calls) != 0 {
+		t.Fatalf("expected no host commands, calls: %v", rr.calls)
+	}
+}
+
+func contains(args []string, want string) bool {
+	for _, a := range args {
+		if a == want {
+			return true
+		}
+	}
+	return false
+}

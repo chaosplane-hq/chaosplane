@@ -188,6 +188,44 @@ func (s *Server) resolveTarget(ctx context.Context, req *daemonv1.NetworkChaosRe
 	return res.HostVethName, res.HostVethIfindex, nil
 }
 
+// podTarget carries the host-side facts the DNS/HTTP/stress faults need to act
+// on a specific pod instead of the daemon itself.
+type podTarget struct {
+	scoped       bool // true when the request named a pod and resolution succeeded
+	hostVeth     string
+	cgroupV2Path string
+}
+
+// resolvePodTarget resolves the host-side veth and cgroup for a pod identified
+// by params (podName/podNamespace/containerId/nodeName). The DNS/HTTP/stress
+// RPCs predate the NetworkChaosRequest pod-identity proto fields, so they carry
+// identity in the parameter map; this keeps the wire format stable.
+//
+// When no pod identity is present, scoped=false is returned with no error so
+// the caller falls back to host scope. When identity IS present but no resolver
+// is configured (CRI socket not wired yet) or resolution fails, an error is
+// returned so the daemon reports failure instead of faulting itself.
+func (s *Server) resolvePodTarget(ctx context.Context, params map[string]string) (podTarget, error) {
+	podName := params["podName"]
+	containerID := params["containerId"]
+	if podName == "" && containerID == "" {
+		return podTarget{}, nil
+	}
+	if s.resolver == nil {
+		return podTarget{}, fmt.Errorf("cannot resolve pod %s/%s: no CRI resolver configured on this daemon", params["podNamespace"], podName)
+	}
+	res, err := s.resolver.Resolve(ctx, netns.PodRef{
+		Namespace:   params["podNamespace"],
+		Name:        podName,
+		ContainerID: containerID,
+		NodeName:    params["nodeName"],
+	})
+	if err != nil {
+		return podTarget{}, fmt.Errorf("resolve pod %s/%s: %w", params["podNamespace"], podName, err)
+	}
+	return podTarget{scoped: true, hostVeth: res.HostVethName, cgroupV2Path: res.CgroupV2Path}, nil
+}
+
 func (s *Server) ExecStressChaos(_ context.Context, req *daemonv1.StressChaosRequest) (*daemonv1.StressChaosResponse, error) {
 	execID := uuid.New().String()
 	params := req.GetParameters()
@@ -225,12 +263,21 @@ func (s *Server) ExecStressChaos(_ context.Context, req *daemonv1.StressChaosReq
 	}, nil
 }
 
-func (s *Server) ExecDNSChaos(_ context.Context, req *daemonv1.DNSChaosRequest) (*daemonv1.DNSChaosResponse, error) {
+func (s *Server) ExecDNSChaos(ctx context.Context, req *daemonv1.DNSChaosRequest) (*daemonv1.DNSChaosResponse, error) {
 	execID := uuid.New().String()
 	params := req.GetParameters()
+	if params == nil {
+		params = map[string]string{}
+	}
 	action := req.GetAction()
 
-	if err := s.sys.dnsIntercept(action, params); err != nil {
+	target, err := s.resolvePodTarget(ctx, params)
+	if err != nil {
+		return &daemonv1.DNSChaosResponse{Success: false, Applied: false, Message: err.Error()}, nil
+	}
+	params["iface"] = target.hostVeth
+
+	if err := s.sys.dnsIntercept(action, target, params); err != nil {
 		return &daemonv1.DNSChaosResponse{
 			Success: false,
 			Applied: false,

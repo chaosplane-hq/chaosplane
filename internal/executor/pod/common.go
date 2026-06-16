@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -80,6 +81,22 @@ func ParseParameters(exp *v1alpha1.ChaosExperiment) (map[string]string, error) {
 		return nil, fmt.Errorf("failed to parse action parameters: %w", err)
 	}
 	return params, nil
+}
+
+// ContainerID returns the first container's runtime ID with the runtime scheme
+// (e.g. "containerd://") stripped, which is what the daemon's netns/cgroup
+// resolver expects.
+func ContainerID(p *corev1.Pod) string {
+	for _, cs := range p.Status.ContainerStatuses {
+		if cs.ContainerID == "" {
+			continue
+		}
+		if idx := strings.Index(cs.ContainerID, "://"); idx != -1 {
+			return cs.ContainerID[idx+3:]
+		}
+		return cs.ContainerID
+	}
+	return ""
 }
 
 type chaosDaemonClient struct {
