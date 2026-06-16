@@ -16,11 +16,13 @@ import (
 	"github.com/chaosplane-hq/chaosplane/internal/executor"
 	awsexec "github.com/chaosplane-hq/chaosplane/internal/executor/aws"
 	azureexec "github.com/chaosplane-hq/chaosplane/internal/executor/azure"
+	clusterexec "github.com/chaosplane-hq/chaosplane/internal/executor/cluster"
 	gcpexec "github.com/chaosplane-hq/chaosplane/internal/executor/gcp"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/network"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/node"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/pod"
 	"github.com/chaosplane-hq/chaosplane/internal/executor/stress"
+	timechaosexec "github.com/chaosplane-hq/chaosplane/internal/executor/timechaos"
 	vmexec "github.com/chaosplane-hq/chaosplane/internal/executor/vm"
 	"github.com/chaosplane-hq/chaosplane/internal/webhook"
 )
@@ -90,6 +92,16 @@ func main() {
 	registry.MustRegister("aws-rds-failover", awsexec.NewRDSFailoverExecutor(logger))
 	registry.MustRegister("aws-ecs-stop-task", awsexec.NewECSStopTaskExecutor(logger))
 	registry.MustRegister("aws-az-failure", awsexec.NewAZFailureExecutor(logger))
+	registry.MustRegister("aws-elasticache-failover", awsexec.NewElastiCacheFailoverExecutor(logger))
+	registry.MustRegister("aws-eks-nodegroup-scale", awsexec.NewEKSNodegroupScaleExecutor(logger))
+	registry.MustRegister("aws-lambda-throttle", awsexec.NewLambdaThrottleExecutor(logger))
+	registry.MustRegister("aws-s3-block", awsexec.NewS3BlockExecutor(logger))
+
+	registry.MustRegister("configmap-chaos", clusterexec.NewConfigMapChaosExecutor(logger, k8sClient))
+	registry.MustRegister("pvc-chaos", clusterexec.NewPVCChaosExecutor(logger, k8sClient))
+	registry.MustRegister("etcd-latency", clusterexec.NewEtcdLatencyExecutor(logger, k8sClient, daemonFactory))
+
+	registry.MustRegister("time-chaos", timechaosexec.NewTimeChaosExecutor(logger, k8sClient))
 
 	registry.MustRegister("vm-cpu-stress", vmexec.NewCPUStressExecutor(logger))
 	registry.MustRegister("vm-memory-stress", vmexec.NewMemoryStressExecutor(logger))
