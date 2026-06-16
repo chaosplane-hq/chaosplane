@@ -302,9 +302,12 @@ func (s *Server) ExecDNSChaos(ctx context.Context, req *daemonv1.DNSChaosRequest
 	}, nil
 }
 
-func (s *Server) ExecHTTPChaos(_ context.Context, req *daemonv1.HTTPChaosRequest) (*daemonv1.HTTPChaosResponse, error) {
+func (s *Server) ExecHTTPChaos(ctx context.Context, req *daemonv1.HTTPChaosRequest) (*daemonv1.HTTPChaosResponse, error) {
 	execID := uuid.New().String()
 	params := req.GetParameters()
+	if params == nil {
+		params = map[string]string{}
+	}
 	action := req.GetAction()
 	port := req.GetPort()
 
@@ -316,13 +319,18 @@ func (s *Server) ExecHTTPChaos(_ context.Context, req *daemonv1.HTTPChaosRequest
 		}, nil
 	}
 
-	portStr := strconv.Itoa(int(port))
-	var err error
+	target, err := s.resolvePodTarget(ctx, params)
+	if err != nil {
+		return &daemonv1.HTTPChaosResponse{Success: false, Applied: false, Message: err.Error()}, nil
+	}
+	params["iface"] = target.hostVeth
+	params["port"] = strconv.Itoa(int(port))
+
 	switch action {
 	case "abort":
-		_, err = s.sys.runner.Run(context.Background(), "iptables", "-A", "INPUT", "-p", "tcp", "--dport", portStr, "-j", "REJECT")
+		err = s.sys.httpAbort(target, int(port))
 	case "delay":
-		_, err = s.sys.runner.Run(context.Background(), "tc", "qdisc", "add", "dev", "lo", "root", "netem", "delay", params["delay"]+"ms")
+		err = s.sys.httpDelay(target, params["delay"])
 	default:
 		return &daemonv1.HTTPChaosResponse{
 			Success: false,
@@ -337,6 +345,7 @@ func (s *Server) ExecHTTPChaos(_ context.Context, req *daemonv1.HTTPChaosRequest
 			Message: fmt.Sprintf("http chaos %q failed on port %d: %v", action, port, err),
 		}, nil
 	}
+	params["action"] = action
 
 	s.store.Add(execID, ExecutionInfo{
 		ID:           execID,
@@ -431,10 +440,7 @@ func (s *Server) CancelChaos(_ context.Context, req *daemonv1.CancelRequest) (*d
 	case "dns":
 		s.sys.dnsRestore(info.Parameters)
 	case "http":
-		if port := info.Parameters["port"]; port != "" {
-			_, _ = s.sys.runner.Run(context.Background(), "iptables", "-D", "INPUT", "-p", "tcp", "--dport", port, "-j", "REJECT")
-			_ = s.sys.tcDelete("lo")
-		}
+		s.sys.httpRestore(info.Parameters)
 	case "node":
 		if info.Parameters["iface"] != "" {
 			_ = s.sys.iptablesUnblock(info.Parameters["iface"], "both")

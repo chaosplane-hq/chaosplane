@@ -266,3 +266,86 @@ func contains(args []string, want string) bool {
 	}
 	return false
 }
+
+// TestHTTPAbortScopedToVeth verifies T10: a pod-scoped HTTP abort REJECTs the
+// target port in the FORWARD chain toward the resolved veth (not the daemon's
+// INPUT/lo), and is removed on cancel.
+func TestHTTPAbortScopedToVeth(t *testing.T) {
+	rr := &recordingRunner{}
+	srv := newServerWithRunner(rr)
+	srv.SetResolver(resolverForVeth("vethGGG", 17))
+
+	resp, _ := srv.ExecHTTPChaos(context.Background(), &daemonv1.HTTPChaosRequest{
+		ExperimentId: "exp-http", Action: "abort", Port: 8080,
+		Parameters: map[string]string{
+			"podName": "web-0", "podNamespace": "default",
+			"containerId": "cid", "nodeName": "node-1",
+		},
+	})
+	if !resp.GetSuccess() || !resp.GetApplied() {
+		t.Fatalf("expected success+applied, got %+v", resp)
+	}
+	if rr.findCall("iptables", "-A", "FORWARD", "-o", "vethGGG", "8080", "REJECT") == nil {
+		t.Fatalf("expected scoped abort rule on vethGGG, calls: %v", rr.calls)
+	}
+	for _, c := range rr.calls {
+		if c[0] == "iptables" && contains(c, "INPUT") {
+			t.Fatalf("scoped HTTP abort must not touch INPUT, calls: %v", rr.calls)
+		}
+	}
+
+	cancel, _ := srv.CancelChaos(context.Background(), &daemonv1.CancelRequest{ExecutionId: resp.GetExecutionId()})
+	if !cancel.GetSuccess() {
+		t.Fatalf("expected cancel success, got %+v", cancel)
+	}
+	if rr.findCall("iptables", "-D", "FORWARD", "-o", "vethGGG", "8080", "REJECT") == nil {
+		t.Fatalf("expected abort rule removed on cancel, calls: %v", rr.calls)
+	}
+}
+
+// TestHTTPDelayScopedToVeth verifies a pod-scoped HTTP delay applies netem on
+// the resolved veth, not on loopback.
+func TestHTTPDelayScopedToVeth(t *testing.T) {
+	rr := &recordingRunner{}
+	srv := newServerWithRunner(rr)
+	srv.SetResolver(resolverForVeth("vethHHH", 18))
+
+	resp, _ := srv.ExecHTTPChaos(context.Background(), &daemonv1.HTTPChaosRequest{
+		ExperimentId: "exp-http2", Action: "delay", Port: 80,
+		Parameters: map[string]string{
+			"delay": "250", "podName": "web-0", "podNamespace": "default",
+			"containerId": "cid", "nodeName": "node-1",
+		},
+	})
+	if !resp.GetSuccess() {
+		t.Fatalf("expected success, got %+v", resp)
+	}
+	if rr.findCall("tc", "vethHHH", "netem", "delay", "250ms") == nil {
+		t.Fatalf("expected netem delay on vethHHH, calls: %v", rr.calls)
+	}
+	for _, c := range rr.calls {
+		if c[0] == "tc" && contains(c, "lo") {
+			t.Fatalf("scoped HTTP delay must not touch lo, calls: %v", rr.calls)
+		}
+	}
+}
+
+// TestHTTPChaosRequiresResolver verifies a pod-named HTTP fault fails honestly
+// with no resolver and issues no host commands.
+func TestHTTPChaosRequiresResolver(t *testing.T) {
+	rr := &recordingRunner{}
+	srv := newServerWithRunner(rr)
+
+	resp, _ := srv.ExecHTTPChaos(context.Background(), &daemonv1.HTTPChaosRequest{
+		ExperimentId: "exp-http3", Action: "abort", Port: 8080,
+		Parameters: map[string]string{
+			"podName": "web-0", "podNamespace": "default", "containerId": "cid",
+		},
+	})
+	if resp.GetSuccess() || resp.GetApplied() {
+		t.Fatalf("expected failure with no resolver, got %+v", resp)
+	}
+	if len(rr.calls) != 0 {
+		t.Fatalf("expected no host commands, calls: %v", rr.calls)
+	}
+}

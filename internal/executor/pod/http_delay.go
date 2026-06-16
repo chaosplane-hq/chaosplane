@@ -71,6 +71,8 @@ func (e *HTTPDelayExecutor) Execute(ctx context.Context, exp *v1alpha1.ChaosExpe
 				"delay":        params["delay"],
 				"podName":      p.Name,
 				"podNamespace": p.Namespace,
+				"containerId":  ContainerID(&p),
+				"nodeName":     p.Spec.NodeName,
 			},
 		})
 		if err != nil {

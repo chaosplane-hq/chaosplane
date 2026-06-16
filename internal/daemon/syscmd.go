@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -104,6 +105,54 @@ func (s *sysOps) tcAddNetem(iface, action string, params map[string]string) erro
 func (s *sysOps) tcDelete(iface string) error {
 	_, _ = s.runner.Run(context.Background(), "tc", "qdisc", "del", "dev", iface, "root")
 	return nil
+}
+
+// httpAbortRuleBody returns the iptables rule body (after -A/-D) that REJECTs
+// TCP traffic to an HTTP port. Scoped to a pod it lives in FORWARD matched on
+// the pod-bound direction of its host-side veth (-o iface), so only requests
+// reaching that pod's port are aborted; unscoped it falls back to the
+// daemon-local INPUT chain.
+func httpAbortRuleBody(iface, portStr string, scoped bool) []string {
+	if scoped {
+		return []string{"FORWARD", "-o", iface, "-p", "tcp", "--dport", portStr, "-j", "REJECT"}
+	}
+	return []string{"INPUT", "-p", "tcp", "--dport", portStr, "-j", "REJECT"}
+}
+
+func (s *sysOps) httpAbort(target podTarget, port int) error {
+	body := httpAbortRuleBody(target.hostVeth, strconv.Itoa(port), target.scoped)
+	_, err := s.runner.Run(context.Background(), "iptables", append([]string{"-A"}, body...)...)
+	return err
+}
+
+func (s *sysOps) httpDelay(target podTarget, delayMS string) error {
+	iface := "lo"
+	if target.scoped {
+		iface = target.hostVeth
+	}
+	if delayMS == "" {
+		delayMS = "100"
+	}
+	_, err := s.runner.Run(context.Background(), "tc", "qdisc", "add", "dev", iface, "root", "netem", "delay", delayMS+"ms")
+	return err
+}
+
+func (s *sysOps) httpRestore(params map[string]string) {
+	scoped := params["iface"] != ""
+	iface := params["iface"]
+	switch params["action"] {
+	case "abort":
+		if port := params["port"]; port != "" {
+			body := httpAbortRuleBody(iface, port, scoped)
+			_, _ = s.runner.Run(context.Background(), "iptables", append([]string{"-D"}, body...)...)
+		}
+	case "delay":
+		if scoped {
+			_ = s.tcDelete(iface)
+		} else {
+			_ = s.tcDelete("lo")
+		}
+	}
 }
 
 func (s *sysOps) iptablesBlock(iface, direction string) error {
