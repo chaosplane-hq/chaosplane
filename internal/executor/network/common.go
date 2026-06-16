@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/chaosplane-hq/chaosplane/api/v1alpha1"
@@ -86,8 +88,11 @@ func (b *baseNetworkExecutor) execNetworkChaos(ctx context.Context, exp *v1alpha
 		resp, err := dc.ExecNetworkChaos(ctx, &daemonv1.NetworkChaosRequest{
 			ExperimentId: string(exp.UID),
 			Action:       action,
-			TargetIface:  fmt.Sprintf("veth_%s", p.Name),
 			Parameters:   params,
+			Namespace:    p.Namespace,
+			PodName:      p.Name,
+			ContainerId:  containerID(&p),
+			NodeName:     p.Spec.NodeName,
 		})
 		if err != nil {
 			return fmt.Errorf("%s: exec on pod %s/%s: %w", prefix, p.Namespace, p.Name, err)
@@ -108,4 +113,19 @@ func validateTarget(exp *v1alpha1.ChaosExperiment, prefix string) error {
 		return fmt.Errorf("%s: target must specify names or labelSelector", prefix)
 	}
 	return nil
+}
+
+// containerID returns the first container's runtime ID with the runtime scheme
+// (e.g. "containerd://") stripped, which is what the CRI status API expects.
+func containerID(p *corev1.Pod) string {
+	for _, cs := range p.Status.ContainerStatuses {
+		if cs.ContainerID == "" {
+			continue
+		}
+		if idx := strings.Index(cs.ContainerID, "://"); idx != -1 {
+			return cs.ContainerID[idx+3:]
+		}
+		return cs.ContainerID
+	}
+	return ""
 }

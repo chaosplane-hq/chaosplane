@@ -10,6 +10,7 @@ import (
 
 	daemonv1 "github.com/chaosplane-hq/chaosplane/gen/daemon/v1"
 	"github.com/chaosplane-hq/chaosplane/internal/daemon"
+	"github.com/chaosplane-hq/chaosplane/internal/daemon/netns"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health"
@@ -21,6 +22,7 @@ func main() {
 	tlsCert := flag.String("tls-cert", "", "TLS certificate file")
 	tlsKey := flag.String("tls-key", "", "TLS private key file")
 	tlsCA := flag.String("tls-ca", "", "TLS CA certificate file for mTLS")
+	criEndpoint := flag.String("cri-endpoint", "", "CRI runtime socket (e.g. unix:///run/containerd/containerd.sock) for pod netns/host-veth resolution")
 	flag.Parse()
 
 	lis, err := net.Listen("tcp", *addr)
@@ -41,7 +43,17 @@ func main() {
 	}
 
 	srv := grpc.NewServer(opts...)
-	daemonv1.RegisterChaosDaemonServer(srv, daemon.NewServer())
+	chaosSrv := daemon.NewServer()
+	if *criEndpoint != "" {
+		resolver, err := netns.New(*criEndpoint)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to init netns resolver: %v\n", err)
+			os.Exit(1)
+		}
+		chaosSrv.SetResolver(resolver)
+		fmt.Printf("pod netns resolution enabled via %s\n", *criEndpoint)
+	}
+	daemonv1.RegisterChaosDaemonServer(srv, chaosSrv)
 
 	healthSrv := health.NewServer()
 	healthpb.RegisterHealthServer(srv, healthSrv)

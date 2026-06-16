@@ -30,6 +30,12 @@ func TestDelayExecutor_Execute(t *testing.T) {
 	if mc.lastNetwork.Parameters["latency"] != "100ms" {
 		t.Fatalf("expected latency=100ms, got %s", mc.lastNetwork.Parameters["latency"])
 	}
+	if mc.lastNetwork.PodName != "victim" || mc.lastNetwork.Namespace != "default" {
+		t.Fatalf("expected pod identity default/victim, got %s/%s", mc.lastNetwork.Namespace, mc.lastNetwork.PodName)
+	}
+	if mc.lastNetwork.TargetIface != "" {
+		t.Fatalf("expected no client-side interface guess, got %q", mc.lastNetwork.TargetIface)
+	}
 }
 
 func TestDelayExecutor_Execute_DaemonError(t *testing.T) {

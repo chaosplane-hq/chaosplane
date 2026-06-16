@@ -9,15 +9,17 @@ import (
 
 	daemonv1 "github.com/chaosplane-hq/chaosplane/gen/daemon/v1"
 	daemonebpf "github.com/chaosplane-hq/chaosplane/internal/daemon/ebpf"
+	"github.com/chaosplane-hq/chaosplane/internal/daemon/netns"
 	"github.com/google/uuid"
 	"log/slog"
 )
 
 type Server struct {
 	daemonv1.UnimplementedChaosDaemonServer
-	store   *ExecutionStore
-	ebpfMgr *daemonebpf.Manager
-	sys     *sysOps
+	store    *ExecutionStore
+	ebpfMgr  *daemonebpf.Manager
+	sys      *sysOps
+	resolver netns.Resolver
 }
 
 func NewServer() *Server {
@@ -27,6 +29,13 @@ func NewServer() *Server {
 		ebpfMgr: daemonebpf.NewManager(logger),
 		sys:     newSysOps(execRunner{}),
 	}
+}
+
+// SetResolver wires the pod netns/host-veth resolver. It is configured once the
+// daemon has a CRI socket (T19); until then network chaos targeting a pod
+// honestly reports failure rather than attaching to the wrong interface.
+func (s *Server) SetResolver(r netns.Resolver) {
+	s.resolver = r
 }
 
 func newServerWithRunner(r commandRunner) *Server {
@@ -41,11 +50,12 @@ func newServerWithRunner(r commandRunner) *Server {
 func (s *Server) ExecNetworkChaos(ctx context.Context, req *daemonv1.NetworkChaosRequest) (*daemonv1.NetworkChaosResponse, error) {
 	execID := uuid.New().String()
 	params := req.GetParameters()
-	iface := req.GetTargetIface()
-	if iface == "" {
-		iface = "eth0"
-	}
 	action := req.GetAction()
+
+	iface, ifIndex, errResp := s.resolveTarget(ctx, req)
+	if errResp != nil {
+		return errResp, nil
+	}
 
 	if params["mode"] == "ebpf" {
 		var err error
@@ -57,11 +67,7 @@ func (s *Server) ExecNetworkChaos(ctx context.Context, req *daemonv1.NetworkChao
 					delayUS = uint32(ms * 1000)
 				}
 			}
-			ifIdx, _ := strconv.Atoi(params["ifIndex"])
-			if ifIdx == 0 {
-				ifIdx = 2
-			}
-			err = s.ebpfMgr.LoadTCDelay(execID, ifIdx, delayUS)
+			err = s.ebpfMgr.LoadTCDelay(execID, ifIndex, delayUS)
 		case "loss":
 			pct := uint32(10)
 			if v := params["percent"]; v != "" {
@@ -69,11 +75,7 @@ func (s *Server) ExecNetworkChaos(ctx context.Context, req *daemonv1.NetworkChao
 					pct = uint32(p)
 				}
 			}
-			ifIdx, _ := strconv.Atoi(params["ifIndex"])
-			if ifIdx == 0 {
-				ifIdx = 2
-			}
-			err = s.ebpfMgr.LoadTCDrop(execID, ifIdx, pct)
+			err = s.ebpfMgr.LoadTCDrop(execID, ifIndex, pct)
 		default:
 			err = fmt.Errorf("unsupported ebpf action: %s", action)
 		}
@@ -105,6 +107,45 @@ func (s *Server) ExecNetworkChaos(ctx context.Context, req *daemonv1.NetworkChao
 		Message:     fmt.Sprintf("network chaos applied: %s", action),
 		ExecutionId: execID,
 	}, nil
+}
+
+// resolveTarget determines the host-side veth interface name and ifindex for a
+// network chaos request. When the request carries a pod identity, it resolves
+// the real host-side veth peer server-side (no privileged container, no setns
+// into the pod). A pod target that cannot be resolved is reported as a failure
+// rather than silently faulting the daemon's own interface.
+func (s *Server) resolveTarget(ctx context.Context, req *daemonv1.NetworkChaosRequest) (iface string, ifIndex int, errResp *daemonv1.NetworkChaosResponse) {
+	if req.GetPodName() == "" && req.GetContainerId() == "" {
+		iface = req.GetTargetIface()
+		if iface == "" {
+			iface = "eth0"
+		}
+		ifIndex, _ = strconv.Atoi(req.GetParameters()["ifIndex"])
+		return iface, ifIndex, nil
+	}
+
+	if s.resolver == nil {
+		return "", 0, &daemonv1.NetworkChaosResponse{
+			Success: false,
+			Applied: false,
+			Message: fmt.Sprintf("cannot resolve host-side veth for pod %s/%s: no CRI resolver configured on this daemon", req.GetNamespace(), req.GetPodName()),
+		}
+	}
+
+	res, err := s.resolver.Resolve(ctx, netns.PodRef{
+		Namespace:   req.GetNamespace(),
+		Name:        req.GetPodName(),
+		ContainerID: req.GetContainerId(),
+		NodeName:    req.GetNodeName(),
+	})
+	if err != nil {
+		return "", 0, &daemonv1.NetworkChaosResponse{
+			Success: false,
+			Applied: false,
+			Message: fmt.Sprintf("resolve host-side veth for pod %s/%s: %v", req.GetNamespace(), req.GetPodName(), err),
+		}
+	}
+	return res.HostVethName, res.HostVethIfindex, nil
 }
 
 func (s *Server) ExecStressChaos(_ context.Context, req *daemonv1.StressChaosRequest) (*daemonv1.StressChaosResponse, error) {
