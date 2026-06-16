@@ -22,6 +22,8 @@ GOLANGCI_LINT_VERSION  ?= v1.62.2
 GOFUMPT_VERSION        ?= v0.7.0
 BUF_VERSION            ?= v1.47.2
 KIND_VERSION           ?= v0.25.0
+SETUP_ENVTEST_VERSION  ?= release-0.20
+ENVTEST_K8S_VERSION    ?= 1.32.0
 
 # kind cluster
 KIND_CLUSTER_NAME ?= chaosplane-dev
@@ -53,6 +55,7 @@ setup: ## Install tools (controller-gen, golangci-lint, gofumpt, buf) + kind clu
 	GOBIN=$(GOBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	GOBIN=$(GOBIN) go install mvdan.cc/gofumpt@$(GOFUMPT_VERSION)
 	GOBIN=$(GOBIN) go install github.com/bufbuild/buf/cmd/buf@$(BUF_VERSION)
+	GOBIN=$(GOBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
 	@echo "Setting up kind cluster..."
 	@bash hack/setup-kind.sh
 
@@ -75,13 +78,22 @@ build-%: ## Build a specific binary (e.g. make build-operator)
 
 ##@ Test
 
+ENVTEST := $(BIN_DIR)/setup-envtest
+
+.PHONY: envtest
+envtest: ## Install setup-envtest + provision control-plane binaries
+	@mkdir -p $(BIN_DIR)
+	@test -x $(ENVTEST) || GOBIN=$(GOBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION)
+	@$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(BIN_DIR) -p path
+
 .PHONY: test
-test: ## Unit tests with coverage
-	go test -race -coverprofile=cover.out -covermode=atomic ./...
+test: envtest ## Unit tests with coverage (provisions envtest binaries)
+	KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(BIN_DIR) -p path)" \
+		go test -race -coverprofile=cover.out -covermode=atomic ./...
 
 .PHONY: test-integration
-test-integration: ## Integration tests
-	go test -race -tags=integration -count=1 ./test/integration/...
+test-integration: ## Integration tests — network-effect + cgroup harness (needs kind, INTEGRATION=1)
+	INTEGRATION=1 go test -race -tags=integration -count=1 -timeout=30m ./test/integration/...
 
 .PHONY: e2e
 e2e: ## E2E tests (kind)
