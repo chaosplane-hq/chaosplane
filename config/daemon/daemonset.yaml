@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: chaosplane-daemon
+  namespace: chaosplane-system
+  labels:
+    app.kubernetes.io/name: chaosplane
+    app.kubernetes.io/component: daemon
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chaosplane
+      app.kubernetes.io/component: daemon
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chaosplane
+        app.kubernetes.io/component: daemon
+    spec:
+      serviceAccountName: chaosplane-daemon
+      # hostPID lets the daemon read /proc/<container-pid>/ns/net and
+      # /proc/<pid>/root/sys/class/net to resolve a pod's host-side veth and
+      # cgroup WITHOUT entering the pod netns. The CRI socket reports PIDs in
+      # the host PID namespace, so those /proc paths are only visible with
+      # hostPID:true.
+      hostPID: true
+      # hostNetwork puts the daemon in the host netns, where the pods'
+      # host-side veth peers live. tc/iptables/eBPF attach to those peers from
+      # here; without hostNetwork the daemon would see only its own sandbox
+      # interfaces and could not touch the target's veth. It also lets the
+      # operator reach the daemon by node name on the host port below.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: daemon
+          image: ghcr.io/chaosplane-hq/daemon:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - -addr=:9090
+            - -cri-endpoint=unix:///run/containerd/containerd.sock
+          ports:
+            - name: grpc
+              containerPort: 9090
+              hostPort: 9090
+              protocol: TCP
+          startupProbe:
+            grpc:
+              port: 9090
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            grpc:
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            grpc:
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            # NO privileged:true. This is the core differentiator from Chaos
+            # Mesh: the daemon needs exactly NET_ADMIN (tc qdiscs, iptables
+            # rules, veth manipulation) and BPF (load/attach the tc-clsact
+            # drop program via cilium/ebpf). Granting these two capabilities
+            # instead of full privilege keeps the blast radius of a daemon
+            # compromise far smaller than a privileged container.
+            privileged: false
+            allowPrivilegeEscalation: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_ADMIN
+                - BPF
+          volumeMounts:
+            # Read-only: the daemon only queries ContainerStatus to map a
+            # container ID to its host PID; it never writes to the runtime.
+            - name: containerd-sock
+              mountPath: /run/containerd/containerd.sock
+              readOnly: true
+            # cgroup v2 must be writable: stress faults migrate stress-ng into
+            # the target pod's cgroup by writing its PID to cgroup.procs, which
+            # scopes the stress to that pod instead of the whole node.
+            - name: cgroup
+              mountPath: /sys/fs/cgroup
+            # iptables needs a writable /run for its xtables lock; the rest of
+            # the root filesystem stays read-only.
+            - name: run
+              mountPath: /run
+      volumes:
+        - name: containerd-sock
+          hostPath:
+            path: /run/containerd/containerd.sock
+            type: Socket
+        - name: cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: run
+          emptyDir: {}
