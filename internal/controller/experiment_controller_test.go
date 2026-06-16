@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -38,7 +40,7 @@ func (f *fakeRecorder) AnnotatedEventf(obj runtime.Object, _ map[string]string, 
 
 func newReconciler() (*controller.ExperimentReconciler, *fakeRecorder) {
 	registry := executor.NewRegistry()
-	registry.Register("pod-kill", pod.NewKillExecutor(slog.Default(), k8sClient, fake.NewSimpleClientset()))
+	registry.Register("pod-kill", pod.NewKillExecutor(slog.Default(), k8sClient, fake.NewSimpleClientset(targetPod())))
 	rec := &fakeRecorder{}
 	return &controller.ExperimentReconciler{
 		Client:   k8sClient,
@@ -49,6 +51,21 @@ func newReconciler() (*controller.ExperimentReconciler, *fakeRecorder) {
 	}, rec
 }
 
+// targetPod matches the label selector set by makeExperiment so the pod-kill
+// executor can resolve and delete a target during reconciliation.
+func targetPod() *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "target-pod",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "test"},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "main", Image: "busybox"}},
+		},
+	}
+}
+
 func makeExperiment(name string, duration time.Duration) *v1alpha1.ChaosExperiment {
 	return &v1alpha1.ChaosExperiment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -56,7 +73,11 @@ func makeExperiment(name string, duration time.Duration) *v1alpha1.ChaosExperime
 			Namespace: "default",
 		},
 		Spec: v1alpha1.ChaosExperimentSpec{
-			Target:   v1alpha1.TargetSpec{Kind: "Pod", Namespace: "default"},
+			Target: v1alpha1.TargetSpec{
+				Kind:          "Pod",
+				Namespace:     "default",
+				LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "test"}},
+			},
 			Action:   v1alpha1.ActionSpec{Type: "pod-kill"},
 			Duration: metav1.Duration{Duration: duration},
 		},
@@ -477,7 +498,7 @@ func TestReconcileTerminalStatesAreNoOp(t *testing.T) {
 
 	for _, phase := range []v1alpha1.ExperimentPhase{v1alpha1.PhaseCompleted, v1alpha1.PhaseFailed, v1alpha1.PhaseAborted} {
 		t.Run(string(phase), func(t *testing.T) {
-			exp := makeExperiment("test-terminal-"+string(phase), 30*time.Second)
+			exp := makeExperiment("test-terminal-"+strings.ToLower(string(phase)), 30*time.Second)
 			ctx := context.Background()
 			if err := k8sClient.Create(ctx, exp); err != nil {
 				t.Fatalf("create: %v", err)
