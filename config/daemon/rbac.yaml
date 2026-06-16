@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chaosplane-daemon
+  namespace: chaosplane-system
+  labels:
+    app.kubernetes.io/name: chaosplane
+    app.kubernetes.io/component: daemon
+---
+# The daemon is node-local: it resolves a target pod's host-side veth and
+# cgroup from /proc and the CRI socket on its own node, then applies the fault
+# there. It needs to read pods/nodes only to correlate the experiment's target
+# to the container running on this node; it does NOT mutate cluster state
+# (that is the operator's job), hence read-only verbs and no write access.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: chaosplane-daemon
+  labels:
+    app.kubernetes.io/name: chaosplane
+    app.kubernetes.io/component: daemon
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: chaosplane-daemon
+  labels:
+    app.kubernetes.io/name: chaosplane
+    app.kubernetes.io/component: daemon
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: chaosplane-daemon
+subjects:
+  - kind: ServiceAccount
+    name: chaosplane-daemon
+    namespace: chaosplane-system

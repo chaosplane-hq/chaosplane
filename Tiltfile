@@ -62,3 +62,6 @@ docker_build_with_restart(
         sync('bin/daemon', '/app/daemon'),
     ],
 )
+
+k8s_yaml(kustomize('config/daemon'))
+k8s_resource('chaosplane-daemon')
