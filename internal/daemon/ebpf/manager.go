@@ -32,37 +32,6 @@ func NewManager(logger *slog.Logger) *Manager {
 	}
 }
 
-func (m *Manager) LoadTCDelay(executionID string, ifIndex int, delayUS uint32) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	spec := &ebpf.ProgramSpec{
-		Name:         "tc_delay_" + executionID[:8],
-		Type:         ebpf.SchedCLS,
-		License:      "GPL",
-		Instructions: delayBPFInstructions(delayUS),
-	}
-
-	prog, err := ebpf.NewProgram(spec)
-	if err != nil {
-		return fmt.Errorf("load tc delay program: %w", err)
-	}
-
-	l, err := link.AttachTCX(link.TCXOptions{
-		Interface: ifIndex,
-		Program:   prog,
-		Attach:    ebpf.AttachTCXIngress,
-	})
-	if err != nil {
-		prog.Close()
-		return fmt.Errorf("attach tc delay program: %w", err)
-	}
-
-	m.programs[executionID] = &loadedProgram{prog: prog, link: l, spec: spec}
-	m.logger.Info("eBPF tc delay loaded", "executionID", executionID, "ifIndex", ifIndex, "delayUS", delayUS)
-	return nil
-}
-
 func (m *Manager) LoadTCDrop(executionID string, ifIndex int, dropPercent uint32) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -79,6 +48,8 @@ func (m *Manager) LoadTCDrop(executionID string, ifIndex int, dropPercent uint32
 		return fmt.Errorf("load tc drop program: %w", err)
 	}
 
+	// Ingress on the host-side veth peer is the pod's egress: packets leaving
+	// the pod arrive here, so this drops the target pod's outbound traffic.
 	l, err := link.AttachTCX(link.TCXOptions{
 		Interface: ifIndex,
 		Program:   prog,
