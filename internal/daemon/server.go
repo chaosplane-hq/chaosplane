@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	daemonv1 "github.com/chaosplane-hq/chaosplane/gen/daemon/v1"
@@ -50,6 +51,9 @@ func newServerWithRunner(r commandRunner) *Server {
 func (s *Server) ExecNetworkChaos(ctx context.Context, req *daemonv1.NetworkChaosRequest) (*daemonv1.NetworkChaosResponse, error) {
 	execID := uuid.New().String()
 	params := req.GetParameters()
+	if params == nil {
+		params = map[string]string{}
+	}
 	action := req.GetAction()
 
 	iface, ifIndex, errResp := s.resolveTarget(ctx, req)
@@ -57,30 +61,31 @@ func (s *Server) ExecNetworkChaos(ctx context.Context, req *daemonv1.NetworkChao
 		return errResp, nil
 	}
 
-	if params["mode"] == "ebpf" {
-		var err error
-		switch action {
-		case "delay":
-			delayUS := uint32(100000)
-			if v := params["latency"]; v != "" {
-				if ms, e := strconv.Atoi(v); e == nil {
-					delayUS = uint32(ms * 1000)
-				}
+	// Delay is always a tc-netem fault: a TC/eBPF classifier cannot sleep, so
+	// there is no eBPF datapath that can actually delay a packet. Only loss has
+	// a real eBPF implementation; everything else (and delay specifically) runs
+	// through netem on the resolved host-side veth.
+	if params["mode"] == "ebpf" && action == "loss" {
+		pct := uint32(10)
+		if v := params["percent"]; v != "" {
+			if p, e := strconv.Atoi(strings.TrimSuffix(v, "%")); e == nil {
+				pct = uint32(p)
 			}
-			err = s.ebpfMgr.LoadTCDelay(execID, ifIndex, delayUS)
-		case "loss":
-			pct := uint32(10)
-			if v := params["percent"]; v != "" {
-				if p, e := strconv.Atoi(v); e == nil {
-					pct = uint32(p)
-				}
-			}
-			err = s.ebpfMgr.LoadTCDrop(execID, ifIndex, pct)
-		default:
-			err = fmt.Errorf("unsupported ebpf action: %s", action)
 		}
-		if err != nil {
-			return &daemonv1.NetworkChaosResponse{Success: false, Applied: false, Message: err.Error()}, nil
+		if err := s.ebpfMgr.LoadTCDrop(execID, ifIndex, pct); err != nil {
+			// eBPF attach can fail on kernels without TCX or without CAP_BPF;
+			// fall back to netem loss so the fault still applies, recording
+			// which datapath actually took effect.
+			if ferr := s.sys.tcAddNetem(iface, "loss", params); ferr != nil {
+				return &daemonv1.NetworkChaosResponse{
+					Success: false,
+					Applied: false,
+					Message: fmt.Sprintf("ebpf loss attach failed (%v) and netem fallback failed (%v) on iface %s", err, ferr, iface),
+				}, nil
+			}
+			params["datapath"] = "netem-fallback"
+		} else {
+			params["datapath"] = "ebpf"
 		}
 	} else {
 		if err := s.sys.tcAddNetem(iface, action, params); err != nil {
@@ -90,7 +95,12 @@ func (s *Server) ExecNetworkChaos(ctx context.Context, req *daemonv1.NetworkChao
 				Message: fmt.Sprintf("network chaos %q failed on iface %s: %v", action, iface, err),
 			}, nil
 		}
+		params["datapath"] = "netem"
 	}
+
+	// Record the resolved iface so cleanup deletes the qdisc on the same
+	// host-side veth, not a guessed default.
+	params["iface"] = iface
 
 	s.store.Add(execID, ExecutionInfo{
 		ID:           execID,
@@ -327,13 +337,13 @@ func (s *Server) CancelChaos(_ context.Context, req *daemonv1.CancelRequest) (*d
 
 	switch info.Type {
 	case "network":
-		if info.Parameters["mode"] == "ebpf" {
+		iface := info.Parameters["iface"]
+		if iface == "" {
+			iface = "eth0"
+		}
+		if info.Parameters["datapath"] == "ebpf" {
 			_ = s.ebpfMgr.Unload(execID)
 		} else {
-			iface := info.Parameters["iface"]
-			if iface == "" {
-				iface = "eth0"
-			}
 			_ = s.sys.tcDelete(iface)
 		}
 	case "stress":
