@@ -141,8 +141,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	webhookServer := mgr.GetWebhookServer()
-	webhookServer.Register("/validate-chaosexperiment", webhook.NewBlastRadiusWebhook())
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		webhookServer := mgr.GetWebhookServer()
+		webhookServer.Register("/validate-chaosexperiment", webhook.NewBlastRadiusWebhook())
+	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		logger.Error("unable to set up health check", "error", err)

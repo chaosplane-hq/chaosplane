@@ -18,6 +18,8 @@ spec:
         app.kubernetes.io/component: daemon
     spec:
       serviceAccountName: chaosplane-daemon
+      imagePullSecrets:
+        - name: ecr-pull-secret
       # hostPID lets the daemon read /proc/<container-pid>/ns/net and
       # /proc/<pid>/root/sys/class/net to resolve a pod's host-side veth and
       # cgroup WITHOUT entering the pod netns. The CRI socket reports PIDs in
@@ -35,7 +37,7 @@ spec:
         - operator: Exists
       containers:
         - name: daemon
-          image: ghcr.io/chaosplane-hq/daemon:latest
+          image: 988261628566.dkr.ecr.ap-northeast-2.amazonaws.com/chaosplane-daemon:latest
           imagePullPolicy: IfNotPresent
           args:
             - -addr=:9090

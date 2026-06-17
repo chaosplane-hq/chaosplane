@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chaosplane-operator
+  namespace: chaosplane-system
+  labels:
+    app.kubernetes.io/name: chaosplane
+    app.kubernetes.io/component: operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chaosplane
+      app.kubernetes.io/component: operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chaosplane
+        app.kubernetes.io/component: operator
+    spec:
+      serviceAccountName: chaosplane-operator
+      imagePullSecrets:
+        - name: ecr-pull-secret
+      containers:
+        - name: operator
+          image: 988261628566.dkr.ecr.ap-northeast-2.amazonaws.com/chaosplane-operator:latest
+          imagePullPolicy: Always
+          env:
+            - name: ENABLE_WEBHOOKS
+              value: "false"
+          ports:
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
