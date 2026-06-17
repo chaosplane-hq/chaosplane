@@ -82,10 +82,6 @@ jobs:
     needs: release
     steps:
       - uses: actions/checkout@v4
-        with:
-          repository: chaosplane-hq/helm-charts
-          token: ${{ secrets.GITHUB_TOKEN }}
-          path: helm-charts
 
       - uses: azure/setup-helm@v4
 
@@ -98,10 +94,10 @@ jobs:
 
       - name: Update Chart.yaml version
         run: |
-          sed -i "s/^version:.*/version: ${{ steps.version.outputs.version }}/" helm-charts/charts/chaosplane/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.version.outputs.version }}\"/" helm-charts/charts/chaosplane/Chart.yaml
+          sed -i "s/^version:.*/version: ${{ steps.version.outputs.version }}/" charts/chaosplane/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.version.outputs.version }}\"/" charts/chaosplane/Chart.yaml
 
       - name: Package and push Helm chart
         run: |
-          helm package helm-charts/charts/chaosplane
+          helm package charts/chaosplane
           helm push chaosplane-${{ steps.version.outputs.version }}.tgz oci://ghcr.io/chaosplane-hq/helm-charts
