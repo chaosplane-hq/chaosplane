@@ -143,7 +143,7 @@ func main() {
 
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		webhookServer := mgr.GetWebhookServer()
-		webhookServer.Register("/validate-chaosexperiment", webhook.NewBlastRadiusWebhook())
+		webhookServer.Register("/validate-chaosexperiment", webhook.NewBlastRadiusWebhookWithClient(mgr.GetClient()))
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

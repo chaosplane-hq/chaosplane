@@ -182,6 +182,7 @@ func watchExperiment(ctx context.Context, cfg AgentConfig, k8s client.Client, ag
 			}
 			if time.Now().After(deadline) {
 				slog.Warn("experiment watch timed out", "id", w.ID)
+				reportStatus(ctx, cfg, agentInstance, w.ID, statusReport{Status: "failed", Result: resultJSON(false, "agent watch deadline exceeded")})
 				return
 			}
 		}

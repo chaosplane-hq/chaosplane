@@ -38,11 +38,13 @@ rules:
     resources:
       - pods
       - pods/exec
+      - pods/eviction
       - nodes
       - services
       - configmaps
       - persistentvolumeclaims
       - events
+      - namespaces
     verbs:
       - get
       - list
@@ -51,6 +53,12 @@ rules:
       - update
       - patch
       - delete
+  - apiGroups: ["policy"]
+    resources:
+      - poddisruptionbudgets
+    verbs:
+      - get
+      - list
   - apiGroups: ["apps"]
     resources:
       - deployments

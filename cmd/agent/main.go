@@ -19,6 +19,7 @@ import (
 type AgentConfig struct {
 	PlatformURL       string
 	Token             string
+	EnvironmentID     string
 	HeartbeatInterval time.Duration
 	TopologyInterval  time.Duration
 }
@@ -47,6 +48,7 @@ type topologySnapshot struct {
 func main() {
 	platformURL := flag.String("platform-url", os.Getenv("CHAOSPLANE_PLATFORM_URL"), "Platform API URL")
 	token := flag.String("token", os.Getenv("CHAOSPLANE_AGENT_TOKEN"), "Agent authentication token")
+	environmentID := flag.String("environment-id", os.Getenv("CHAOSPLANE_ENVIRONMENT_ID"), "Environment ID this agent belongs to")
 	heartbeatSec := flag.Int("heartbeat-interval", 30, "Heartbeat interval in seconds")
 	topologySec := flag.Int("topology-interval", 300, "Topology collection interval in seconds")
 	version := flag.Bool("version", false, "Print version and exit")
@@ -65,6 +67,7 @@ func main() {
 	cfg := AgentConfig{
 		PlatformURL:       *platformURL,
 		Token:             *token,
+		EnvironmentID:     *environmentID,
 		HeartbeatInterval: time.Duration(*heartbeatSec) * time.Second,
 		TopologyInterval:  time.Duration(*topologySec) * time.Second,
 	}
@@ -102,7 +105,7 @@ func register(ctx context.Context, cfg AgentConfig) error {
 		Token:        cfg.Token,
 		AgentVersion: "1.0.0",
 	}
-	_, err := postJSON(ctx, cfg.PlatformURL+"/agent/register", body)
+	_, err := postJSON(ctx, cfg.PlatformURL+"/agent/register", body, cfg.Token)
 	return err
 }
 
@@ -119,7 +122,7 @@ func heartbeatLoop(ctx context.Context, cfg AgentConfig) {
 				Token:  cfg.Token,
 				Status: "connected",
 			}
-			if _, err := postJSON(ctx, cfg.PlatformURL+"/agent/heartbeat", body); err != nil {
+			if _, err := postJSON(ctx, cfg.PlatformURL+"/agent/heartbeat", body, cfg.Token); err != nil {
 				slog.Warn("heartbeat failed", "error", err)
 			}
 		}
@@ -143,15 +146,15 @@ func topologyLoop(ctx context.Context, cfg AgentConfig) {
 }
 
 func collectAndSubmit(ctx context.Context, cfg AgentConfig) {
-	snapshot := collectTopology()
-	if _, err := postJSON(ctx, cfg.PlatformURL+"/agent/topology", snapshot); err != nil {
+	snapshot := collectTopology(cfg.EnvironmentID)
+	if _, err := postJSON(ctx, cfg.PlatformURL+"/agent/topology", snapshot, cfg.Token); err != nil {
 		slog.Warn("topology submission failed", "error", err)
 	} else {
 		slog.Info("topology submitted")
 	}
 }
 
-func collectTopology() topologySnapshot {
+func collectTopology(environmentID string) topologySnapshot {
 	nodes := collectKubeResource("nodes")
 	namespaces := collectKubeResource("namespaces")
 	services := collectKubeResource("services")
@@ -159,11 +162,12 @@ func collectTopology() topologySnapshot {
 	pods := collectKubeResource("pods")
 
 	return topologySnapshot{
-		Nodes:       nodes,
-		Namespaces:  namespaces,
-		Services:    services,
-		Deployments: deployments,
-		Pods:        pods,
+		EnvironmentID: environmentID,
+		Nodes:         nodes,
+		Namespaces:    namespaces,
+		Services:      services,
+		Deployments:   deployments,
+		Pods:          pods,
 	}
 }
 
@@ -198,7 +202,7 @@ func execKubectl(ctx context.Context, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
-func postJSON(ctx context.Context, url string, body interface{}) ([]byte, error) {
+func postJSON(ctx context.Context, url string, body interface{}, token string) ([]byte, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -209,6 +213,9 @@ func postJSON(ctx context.Context, url string, body interface{}) ([]byte, error)
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)

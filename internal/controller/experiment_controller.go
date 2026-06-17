@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	finalizerName   = "chaosplane.dev/experiment-protection"
-	abortAnnotation = "chaosplane.dev/abort"
+	finalizerName      = "chaosplane.dev/experiment-protection"
+	abortAnnotation    = "chaosplane.dev/abort"
+	executedAnnotation = "chaosplane.dev/executed"
 )
 
 type ExperimentReconciler struct {
@@ -201,25 +202,38 @@ func (r *ExperimentReconciler) reconcileRunning(ctx context.Context, exp *v1alph
 		return r.transitionToCompleting(ctx, exp, log)
 	}
 
-	exec, err := r.Registry.Get(exp.Spec.Action.Type)
-	if err != nil {
-		log.Error("executor lost during running phase", "experiment", expRef, "action", exp.Spec.Action.Type)
-		return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: executor for action %q lost during running phase: %v", expRef, exp.Spec.Action.Type, err))
-	}
-
-	r.Recorder.Eventf(exp, "Normal", "Executing", "Experiment %s: executing action %q", expRef, exp.Spec.Action.Type)
-	if err := exec.Execute(ctx, exp); err != nil {
-		log.Error("execute failed, attempting rollback", "experiment", expRef, "action", exp.Spec.Action.Type, "error", err)
-		r.Recorder.Eventf(exp, "Warning", "ExecuteFailed", "Experiment %s: action %q failed: %v", expRef, exp.Spec.Action.Type, err)
-		r.Recorder.Eventf(exp, "Normal", "RollbackStarted", "Experiment %s: initiating rollback after execution failure", expRef)
-		rbErr := exec.Rollback(ctx, exp)
-		if rbErr != nil {
-			log.Error("rollback also failed", "experiment", expRef, "executeError", err, "rollbackError", rbErr)
-			r.Recorder.Eventf(exp, "Warning", "RollbackFailed", "Experiment %s: rollback also failed: %v", expRef, rbErr)
-			return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: execution failed: %v; rollback also failed: %v", expRef, err, rbErr))
+	// Only execute once per experiment to prevent non-idempotent actions from repeating
+	if exp.Annotations[executedAnnotation] != "true" {
+		exec, err := r.Registry.Get(exp.Spec.Action.Type)
+		if err != nil {
+			log.Error("executor lost during running phase", "experiment", expRef, "action", exp.Spec.Action.Type)
+			return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: executor for action %q lost during running phase: %v", expRef, exp.Spec.Action.Type, err))
 		}
-		r.Recorder.Eventf(exp, "Normal", "RollbackCompleted", "Experiment %s: rollback completed after execution failure", expRef)
-		return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: execution failed: %v", expRef, err))
+
+		r.Recorder.Eventf(exp, "Normal", "Executing", "Experiment %s: executing action %q", expRef, exp.Spec.Action.Type)
+		if err := exec.Execute(ctx, exp); err != nil {
+			log.Error("execute failed, attempting rollback", "experiment", expRef, "action", exp.Spec.Action.Type, "error", err)
+			r.Recorder.Eventf(exp, "Warning", "ExecuteFailed", "Experiment %s: action %q failed: %v", expRef, exp.Spec.Action.Type, err)
+			r.Recorder.Eventf(exp, "Normal", "RollbackStarted", "Experiment %s: initiating rollback after execution failure", expRef)
+			rbErr := exec.Rollback(ctx, exp)
+			if rbErr != nil {
+				log.Error("rollback also failed", "experiment", expRef, "executeError", err, "rollbackError", rbErr)
+				r.Recorder.Eventf(exp, "Warning", "RollbackFailed", "Experiment %s: rollback also failed: %v", expRef, rbErr)
+				return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: execution failed: %v; rollback also failed: %v", expRef, err, rbErr))
+			}
+			r.Recorder.Eventf(exp, "Normal", "RollbackCompleted", "Experiment %s: rollback completed after execution failure", expRef)
+			return r.setFailed(ctx, exp, fmt.Sprintf("experiment %s: execution failed: %v", expRef, err))
+		}
+
+		// Mark as executed so subsequent reconciles don't re-run the action
+		patch := client.MergeFrom(exp.DeepCopy())
+		if exp.Annotations == nil {
+			exp.Annotations = map[string]string{}
+		}
+		exp.Annotations[executedAnnotation] = "true"
+		if err := r.Patch(ctx, exp, patch); err != nil {
+			log.Error("failed to mark executed annotation", "experiment", expRef, "error", err)
+		}
 	}
 
 	remaining := duration - elapsed

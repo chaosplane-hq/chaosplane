@@ -17,7 +17,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-const daemonPort = 9090
+const daemonPort = 50051
 
 // DaemonClientFactory creates daemon gRPC clients for a given endpoint.
 type DaemonClientFactory func(endpoint string) (daemonv1.ChaosDaemonClient, error)

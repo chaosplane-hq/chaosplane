@@ -263,6 +263,12 @@ func NewBlastRadiusWebhook() *admission.Webhook {
 	}
 }
 
+func NewBlastRadiusWebhookWithClient(c client.Client) *admission.Webhook {
+	return &admission.Webhook{
+		Handler: &BlastRadiusValidator{Client: c},
+	}
+}
+
 func NewBlastRadiusHealthHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
