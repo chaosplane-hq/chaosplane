@@ -1,0 +1,20 @@
+apiVersion: chaos.chaosplane.dev/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: e2e-time-skew
+  namespace: default
+  labels:
+    test: e2e
+spec:
+  target:
+    kind: Pod
+    namespace: default
+    labelSelector:
+      matchLabels:
+        app: e2e-target
+  action:
+    type: time-skew
+    parameters:
+      offset: "+5m"
+      clockIds: "CLOCK_REALTIME"
+  duration: 30s

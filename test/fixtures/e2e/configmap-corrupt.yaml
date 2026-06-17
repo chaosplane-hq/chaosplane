@@ -1,0 +1,21 @@
+apiVersion: chaos.chaosplane.dev/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: e2e-configmap-corrupt
+  namespace: default
+  labels:
+    test: e2e
+spec:
+  target:
+    kind: ConfigMap
+    namespace: default
+    labelSelector:
+      matchLabels:
+        app: e2e-target
+  action:
+    type: configmap-corrupt
+    parameters:
+      namespace: "default"
+      configMapName: "e2e-target-config"
+      key: "app.conf"
+  duration: 30s

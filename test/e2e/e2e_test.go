@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -42,6 +43,19 @@ var allExecutors = []struct {
 	{"node-cpu-stress", "node-cpu-stress.yaml"},
 	{"stress-cpu", "stress-cpu.yaml"},
 	{"stress-memory", "stress-memory.yaml"},
+	{"configmap-corrupt", "configmap-corrupt.yaml"},
+	{"pvc-fill", "pvc-fill.yaml"},
+	{"etcd-latency", "etcd-latency.yaml"},
+	{"time-skew", "time-skew.yaml"},
+}
+
+var awsExecutors = []struct {
+	name    string
+	fixture string
+}{
+	{"aws-ec2-stop", "aws-ec2-stop.yaml"},
+	{"aws-rds-failover", "aws-rds-failover.yaml"},
+	{"aws-ecs-stop-task", "aws-ecs-stop-task.yaml"},
 }
 
 func TestAllExecutors(t *testing.T) {
@@ -88,6 +102,122 @@ func TestAllExecutors(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAWSExecutors(t *testing.T) {
+	if os.Getenv("AWS_E2E") != "1" {
+		t.Skip("skipping AWS e2e tests: set AWS_E2E=1 to enable")
+	}
+
+	c, err := newE2EClient()
+	if err != nil {
+		t.Fatalf("create e2e client: %v", err)
+	}
+
+	for _, tc := range awsExecutors {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+			defer cancel()
+
+			fixturePath := filepath.Join(fixtureDir(), tc.fixture)
+			obj, err := applyFixture(ctx, c, fixturePath)
+			if err != nil {
+				t.Fatalf("apply fixture %s: %v", tc.fixture, err)
+			}
+
+			name := obj.GetName()
+			ns := obj.GetNamespace()
+			defer func() {
+				if cleanErr := cleanupExperiment(context.Background(), c, ns, name); cleanErr != nil {
+					t.Logf("cleanup %s/%s: %v", ns, name, cleanErr)
+				}
+			}()
+
+			phase, err := waitForPhase(ctx, c, ns, name, []string{"Running", "Completed", "Failed"}, defaultTimeout)
+			if err != nil {
+				t.Fatalf("wait for phase: %v", err)
+			}
+
+			t.Logf("experiment %s reached phase %s", name, phase)
+		})
+	}
+}
+
+func TestClusterExecutors(t *testing.T) {
+	c, err := newE2EClient()
+	if err != nil {
+		t.Fatalf("create e2e client: %v", err)
+	}
+
+	clusterFixtures := []struct {
+		name    string
+		fixture string
+	}{
+		{"configmap-corrupt", "configmap-corrupt.yaml"},
+		{"pvc-fill", "pvc-fill.yaml"},
+		{"etcd-latency", "etcd-latency.yaml"},
+	}
+
+	for _, tc := range clusterFixtures {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+			defer cancel()
+
+			fixturePath := filepath.Join(fixtureDir(), tc.fixture)
+			obj, err := applyFixture(ctx, c, fixturePath)
+			if err != nil {
+				t.Fatalf("apply fixture %s: %v", tc.fixture, err)
+			}
+
+			name := obj.GetName()
+			ns := obj.GetNamespace()
+			defer func() {
+				if cleanErr := cleanupExperiment(context.Background(), c, ns, name); cleanErr != nil {
+					t.Logf("cleanup %s/%s: %v", ns, name, cleanErr)
+				}
+			}()
+
+			phase, err := waitForPhase(ctx, c, ns, name, []string{"Running", "Completed", "Failed"}, defaultTimeout)
+			if err != nil {
+				t.Fatalf("wait for phase: %v", err)
+			}
+
+			t.Logf("experiment %s reached phase %s", name, phase)
+		})
+	}
+}
+
+func TestTimeChaos(t *testing.T) {
+	c, err := newE2EClient()
+	if err != nil {
+		t.Fatalf("create e2e client: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	fixturePath := filepath.Join(fixtureDir(), "time-skew.yaml")
+	obj, err := applyFixture(ctx, c, fixturePath)
+	if err != nil {
+		t.Fatalf("apply fixture time-skew.yaml: %v", err)
+	}
+
+	name := obj.GetName()
+	ns := obj.GetNamespace()
+	defer func() {
+		if cleanErr := cleanupExperiment(context.Background(), c, ns, name); cleanErr != nil {
+			t.Logf("cleanup %s/%s: %v", ns, name, cleanErr)
+		}
+	}()
+
+	phase, err := waitForPhase(ctx, c, ns, name, []string{"Running", "Completed", "Failed"}, defaultTimeout)
+	if err != nil {
+		t.Fatalf("wait for phase: %v", err)
+	}
+
+	t.Logf("experiment %s reached phase %s", name, phase)
 }
 
 func TestConcurrentExperiments(t *testing.T) {

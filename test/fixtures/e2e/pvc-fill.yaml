@@ -1,0 +1,21 @@
+apiVersion: chaos.chaosplane.dev/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: e2e-pvc-fill
+  namespace: default
+  labels:
+    test: e2e
+spec:
+  target:
+    kind: PersistentVolumeClaim
+    namespace: default
+    labelSelector:
+      matchLabels:
+        app: e2e-target
+  action:
+    type: pvc-fill
+    parameters:
+      namespace: "default"
+      pvcName: "e2e-target-pvc"
+      fillPercentage: "80"
+  duration: 30s
