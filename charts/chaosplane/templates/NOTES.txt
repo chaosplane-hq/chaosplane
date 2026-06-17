@@ -1,0 +1,13 @@
+ChaosPlane has been installed.
+
+Namespace: {{ .Values.namespace.name }}
+Daemon image: {{ include "chaosplane.daemon.image" . }}
+
+The daemon DaemonSet is rolling out on all nodes.
+Check status with:
+
+  kubectl -n {{ .Values.namespace.name }} get ds
+
+Verify daemon pods are ready:
+
+  kubectl -n {{ .Values.namespace.name }} get pods -l app.kubernetes.io/component=daemon

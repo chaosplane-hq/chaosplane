@@ -1,0 +1,48 @@
+nameOverride: ""
+fullnameOverride: ""
+
+rbac:
+  create: true
+
+namespace:
+  create: true
+  name: chaosplane-system
+
+daemon:
+  image:
+    registry: ghcr.io
+    repository: chaosplane-hq/daemon
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  grpcPort: 9090
+
+  hostNetwork: true
+  hostPID: true
+  privileged: false
+  capabilities:
+    - NET_ADMIN
+    - BPF
+
+  runtime: containerd
+  socketPath: /run/containerd/containerd.sock
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  tolerations:
+    - operator: Exists
+
+  nodeSelector: {}
+
+  affinity: {}
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
