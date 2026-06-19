@@ -233,6 +233,7 @@ func (r *ExperimentReconciler) reconcileRunning(ctx context.Context, exp *v1alph
 		exp.Annotations[executedAnnotation] = "true"
 		if err := r.Patch(ctx, exp, patch); err != nil {
 			log.Error("failed to mark executed annotation", "experiment", expRef, "error", err)
+			return ctrl.Result{}, err
 		}
 	}
 

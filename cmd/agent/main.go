@@ -83,14 +83,14 @@ func main() {
 	}
 	slog.Info("registered with platform")
 
-	go heartbeatLoop(ctx, cfg)
-	go topologyLoop(ctx, cfg)
+	go safeGo("heartbeatLoop", func() { heartbeatLoop(ctx, cfg) })
+	go safeGo("topologyLoop", func() { topologyLoop(ctx, cfg) })
 
 	agentInstance := os.Getenv("HOSTNAME")
 	if agentInstance == "" {
 		agentInstance = "agent"
 	}
-	go workLoop(ctx, cfg, agentInstance)
+	go safeGo("workLoop", func() { workLoop(ctx, cfg, agentInstance) })
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -98,6 +98,15 @@ func main() {
 
 	slog.Info("chaosplane-agent shutting down")
 	cancel()
+}
+
+func safeGo(name string, fn func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("goroutine panicked", "name", name, "panic", r)
+		}
+	}()
+	fn()
 }
 
 func register(ctx context.Context, cfg AgentConfig) error {

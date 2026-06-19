@@ -103,8 +103,8 @@ func (s *sysOps) tcAddNetem(iface, action string, params map[string]string) erro
 }
 
 func (s *sysOps) tcDelete(iface string) error {
-	_, _ = s.runner.Run(context.Background(), "tc", "qdisc", "del", "dev", iface, "root")
-	return nil
+	_, err := s.runner.Run(context.Background(), "tc", "qdisc", "del", "dev", iface, "root")
+	return err
 }
 
 // httpAbortRuleBody returns the iptables rule body (after -A/-D) that REJECTs
@@ -175,11 +175,14 @@ func (s *sysOps) iptablesUnblock(iface, direction string) error {
 	if direction == "ingress" || direction == "both" {
 		chain = "INPUT"
 	}
-	_, _ = s.runner.Run(context.Background(), "iptables", "-D", chain, "-i", iface, "-j", "DROP")
+	_, err := s.runner.Run(context.Background(), "iptables", "-D", chain, "-i", iface, "-j", "DROP")
 	if direction == "both" {
-		_, _ = s.runner.Run(context.Background(), "iptables", "-D", "OUTPUT", "-o", iface, "-j", "DROP")
+		_, err2 := s.runner.Run(context.Background(), "iptables", "-D", "OUTPUT", "-o", iface, "-j", "DROP")
+		if err == nil {
+			err = err2
+		}
 	}
-	return nil
+	return err
 }
 
 // partitionRules builds the iptables FORWARD rules that partition a pod from a

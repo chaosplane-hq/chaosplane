@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	v1alpha1 "github.com/chaosplane-hq/chaosplane/api/v1alpha1"
 )
@@ -14,6 +15,8 @@ type prometheusProbe struct {
 	spec   v1alpha1.PrometheusProbe
 	client *http.Client
 }
+
+var promProbeClient = &http.Client{Timeout: 5 * time.Second}
 
 type promQueryResponse struct {
 	Status string        `json:"status"`
@@ -31,7 +34,7 @@ type promQueryResult struct {
 
 func (p *prometheusProbe) Run(ctx context.Context) (bool, error) {
 	if p.client == nil {
-		p.client = http.DefaultClient
+		p.client = promProbeClient
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.spec.URL+"/api/v1/query", nil)

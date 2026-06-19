@@ -96,7 +96,7 @@ func workLoop(ctx context.Context, cfg AgentConfig, agentInstance string) {
 				continue
 			}
 			slog.Info("claimed experiment", "id", w.ID, "name", w.Name)
-			go runExperiment(ctx, cfg, k8s, agentInstance, w)
+			go safeGo("runExperiment:"+w.ID, func() { runExperiment(ctx, cfg, k8s, agentInstance, w) })
 		}
 	}
 }

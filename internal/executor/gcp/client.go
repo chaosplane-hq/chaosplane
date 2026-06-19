@@ -29,14 +29,14 @@ func (c *GCPClient) request(ctx context.Context, method, url string, body interf
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("gcp marshal request body: %w", err)
 		}
 		reqBody = bytes.NewReader(data)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("gcp create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.BearerToken)
 	req.Header.Set("Content-Type", "application/json")
@@ -48,7 +48,7 @@ func (c *GCPClient) request(ctx context.Context, method, url string, body interf
 	defer resp.Body.Close()
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("gcp read response body: %w", err)
 	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("gcp api error %d: %s", resp.StatusCode, string(respBody))
@@ -61,7 +61,10 @@ func (c *GCPClient) GKESetNodePoolSize(ctx context.Context, zone, cluster, nodeP
 		c.ProjectID, zone, cluster, nodePool)
 	body := map[string]interface{}{"nodeCount": size}
 	_, err := c.request(ctx, http.MethodPost, url, body)
-	return err
+	if err != nil {
+		return fmt.Errorf("gcp gke set node pool size %s/%s: %w", cluster, nodePool, err)
+	}
+	return nil
 }
 
 func (c *GCPClient) CloudSQLFailover(ctx context.Context, instance string) error {
@@ -73,7 +76,10 @@ func (c *GCPClient) CloudSQLFailover(ctx context.Context, instance string) error
 		},
 	}
 	_, err := c.request(ctx, http.MethodPost, url, body)
-	return err
+	if err != nil {
+		return fmt.Errorf("gcp cloudsql failover %s: %w", instance, err)
+	}
+	return nil
 }
 
 func (c *GCPClient) CloudRunUpdateTraffic(ctx context.Context, region, service string, percent int) error {
@@ -85,5 +91,8 @@ func (c *GCPClient) CloudRunUpdateTraffic(ctx context.Context, region, service s
 		},
 	}
 	_, err := c.request(ctx, http.MethodPatch, url, body)
-	return err
+	if err != nil {
+		return fmt.Errorf("gcp cloudrun update traffic %s/%s: %w", region, service, err)
+	}
+	return nil
 }

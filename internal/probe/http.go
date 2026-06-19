@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"time"
 
 	v1alpha1 "github.com/chaosplane-hq/chaosplane/api/v1alpha1"
 )
@@ -15,9 +16,11 @@ type httpProbe struct {
 	client *http.Client
 }
 
+var httpProbeClient = &http.Client{Timeout: 5 * time.Second}
+
 func (p *httpProbe) Run(ctx context.Context) (bool, error) {
 	if p.client == nil {
-		p.client = http.DefaultClient
+		p.client = httpProbeClient
 	}
 
 	method := p.spec.Method

@@ -31,14 +31,14 @@ func (c *AzureClient) request(ctx context.Context, method, url string, body inte
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("azure marshal request body: %w", err)
 		}
 		reqBody = bytes.NewReader(data)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("azure create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.BearerToken)
 	req.Header.Set("Content-Type", "application/json")
@@ -50,7 +50,7 @@ func (c *AzureClient) request(ctx context.Context, method, url string, body inte
 	defer resp.Body.Close()
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("azure read response body: %w", err)
 	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("azure api error %d: %s", resp.StatusCode, string(respBody))
@@ -62,14 +62,20 @@ func (c *AzureClient) VMDeallocate(ctx context.Context, vmName string) error {
 	url := fmt.Sprintf("https://management.azure.com/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s/deallocate?api-version=2024-03-01",
 		c.SubscriptionID, c.ResourceGroup, vmName)
 	_, err := c.request(ctx, http.MethodPost, url, nil)
-	return err
+	if err != nil {
+		return fmt.Errorf("azure vm deallocate %s: %w", vmName, err)
+	}
+	return nil
 }
 
 func (c *AzureClient) VMStart(ctx context.Context, vmName string) error {
 	url := fmt.Sprintf("https://management.azure.com/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s/start?api-version=2024-03-01",
 		c.SubscriptionID, c.ResourceGroup, vmName)
 	_, err := c.request(ctx, http.MethodPost, url, nil)
-	return err
+	if err != nil {
+		return fmt.Errorf("azure vm start %s: %w", vmName, err)
+	}
+	return nil
 }
 
 func (c *AzureClient) AKSScaleNodePool(ctx context.Context, clusterName, nodePool string, count int) error {
@@ -81,7 +87,10 @@ func (c *AzureClient) AKSScaleNodePool(ctx context.Context, clusterName, nodePoo
 		},
 	}
 	_, err := c.request(ctx, http.MethodPut, url, body)
-	return err
+	if err != nil {
+		return fmt.Errorf("azure aks scale node pool %s/%s: %w", clusterName, nodePool, err)
+	}
+	return nil
 }
 
 func (c *AzureClient) CosmosDBFailover(ctx context.Context, accountName, targetRegion string) error {
@@ -93,5 +102,8 @@ func (c *AzureClient) CosmosDBFailover(ctx context.Context, accountName, targetR
 		},
 	}
 	_, err := c.request(ctx, http.MethodPost, url, body)
-	return err
+	if err != nil {
+		return fmt.Errorf("azure cosmosdb failover %s to %s: %w", accountName, targetRegion, err)
+	}
+	return nil
 }

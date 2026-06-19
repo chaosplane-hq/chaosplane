@@ -447,11 +447,15 @@ func (s *Server) CancelChaos(_ context.Context, req *daemonv1.CancelRequest) (*d
 		}
 		switch info.Parameters["datapath"] {
 		case "ebpf":
-			_ = s.ebpfMgr.Unload(execID)
+			if err := s.ebpfMgr.Unload(execID); err != nil {
+				log.Printf("cancel chaos: ebpf unload failed id=%s: %v", execID, err)
+			}
 		case "iptables":
 			s.sys.partitionRestore(iface, info.Parameters["direction"], info.Parameters["target_cidr"])
 		default:
-			_ = s.sys.tcDelete(iface)
+			if err := s.sys.tcDelete(iface); err != nil {
+				log.Printf("cancel chaos: tcDelete failed id=%s iface=%s: %v", execID, iface, err)
+			}
 		}
 	case "stress":
 		s.sys.stressNGStop()
@@ -461,7 +465,9 @@ func (s *Server) CancelChaos(_ context.Context, req *daemonv1.CancelRequest) (*d
 		s.sys.httpRestore(info.Parameters)
 	case "node":
 		if info.Parameters["iface"] != "" {
-			_ = s.sys.iptablesUnblock(info.Parameters["iface"], "both")
+			if err := s.sys.iptablesUnblock(info.Parameters["iface"], "both"); err != nil {
+				log.Printf("cancel chaos: iptablesUnblock failed id=%s: %v", execID, err)
+			}
 		}
 		s.sys.stressNGStop()
 	}
